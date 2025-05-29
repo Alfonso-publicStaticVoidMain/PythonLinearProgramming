@@ -5,26 +5,26 @@ from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import CpModel, IntVar
 from typing import List, Optional, Dict, Tuple
 
-def solve_assignment(
-    workers: List[int | str], # Contains the IDs or names of the workers
-    tasks: List[int | str], # Contains the different tasks, identified by an int or a string
-    demand: Dict[Tuple[int | str, str], int], # For each task and shift, maps it to the number of workers demanded for it
-    specialties: Dict[int | str, List[int | str]], # For each task, maps it to a List of the workers that have that task as their specialty, ordered by their priority of assignment
-    capabilities: Dict[int | str, List[int | str]], # For each task, maps it to a List of the workers that can perform that task without being their specialty
-    worker_availability: Dict[Tuple[int | str, str], bool], # For each worker and shift, maps it to true or false depending on if the worker is available for that shift
-    verbose: bool = False, # Parameter to print the result via console or not
-    max_score: int = 1000, # Base score a single assignment can reach
-    specialty_weight: float = 1.0, # Weight for assigning a worker to its specialty
-    capability_weight: float = 0.3, # Weight for assigning a worker to a task that isn't their specialty
-    priority_decay: int = 10, # Base score loss for being further from the top of the list
-) -> Dict[Tuple[int | str, int | str, str], bool]:
-    shifts: Tuple[str, str, str, str] = ('morning', 'afternoon', 'night_1', 'night_2')
-    model: CpModel = cp_model.CpModel()
 
-    # In case they're absent, set the default demands to 0 so they can be safely consulted later
-    for t in tasks:
-        for s in shifts:
-            demand.setdefault((t, s), 0)
+def solve_assignment(
+        workers: List[int | str],  # Contains the IDs or names of the workers
+        tasks: List[int | str],  # Contains the different tasks, identified by an int or a string
+        shifts: List[str],
+        demand: Dict[Tuple[int | str, str], int],
+        # For each task and shift, maps it to the number of workers demanded for it
+        specialties: Dict[int | str, List[int | str]],
+        # For each task, maps it to a List of the workers that have that task as their specialty, ordered by their priority of assignment
+        capabilities: Dict[int | str, List[int | str]],
+        # For each task, maps it to a List of the workers that can perform that task without being their specialty
+        worker_availability: Dict[Tuple[int | str, str], bool],
+        # For each worker and shift, maps it to true or false depending on if the worker is available for that shift
+        verbose: bool = False,  # Parameter to print the result via console or not
+        max_score: int = 1000,  # Base score a single assignment can reach
+        specialty_weight: float = 1.0,  # Weight for assigning a worker to its specialty
+        capability_weight: float = 0.3,  # Weight for assigning a worker to a task that isn't their specialty
+        priority_decay: int = 10,  # Base score loss for being further from the top of the list
+) -> Dict[Tuple[int | str, int | str, str], bool]:
+    model: CpModel = cp_model.CpModel()
 
     # Define the variables on a dictionary
     x: Dict[Tuple[int | str, int | str, str], IntVar] = {}
@@ -124,7 +124,8 @@ def solve_assignment(
             else:
                 print('Feasible solution found. Optimality cannot be guaranteed.')
 
-            print(f'Number of specialty assignments achieved = {solver.ObjectiveValue()} out of {sum(demand.get((t, s), 0) for t in tasks for s in shifts)}\n')
+            print(
+                f'Number of specialty assignments achieved = {solver.ObjectiveValue()} out of {sum(demand.get((t, s), 0) for t in tasks for s in shifts)}\n')
             for w in workers:
                 for t in tasks:
                     for s in shifts:
@@ -143,7 +144,7 @@ def solve_assignment(
     return result
 
 
-def format_duration(seconds: float) -> str:
+def format_duration(seconds: float | int) -> str:
     if seconds < 10:
         return f"{seconds} seconds"
     seconds_int = int(seconds)
@@ -161,8 +162,45 @@ def format_duration(seconds: float) -> str:
         return f"{hours} hours, {minutes} minutes and {rem_seconds} seconds"
 
 
+def printTable(
+        solution: Dict[Tuple[int | str, int | str, str], bool],
+        workers: List[int | str],
+        tasks: List[int | str],
+        shifts: List[str],
+        col_width: int = 4,
+        v_sep: str = "│",
+        h_line: str = "─",
+        cross: str = "┼",
+) -> None:
+    for s in shifts:
+        print(f"{s.capitalize()} shift")
+
+        # Header row
+        header = " " * col_width + v_sep + v_sep.join(f"{w:^{col_width}}" for w in workers) + v_sep
+        print(header)
+
+        # Separator row with ┼ intersections
+        sep = h_line * col_width + cross
+        for _ in range(len(workers) - 1):
+            sep += h_line * col_width + cross
+        sep += h_line * col_width
+        print(sep)
+
+        # Data rows
+        for t in tasks:
+            row = f"{str(t):^{col_width}}" + v_sep
+            for w in workers:
+                val = solution.get((w, t, s), False)
+                row += f"{'X' if val else ' ':^{col_width}}" + v_sep
+            print(row)
+            print(sep)
+
+        print()
+
+
 workers: List[int | str] = list(range(50))
 tasks: List[int | str] = list(range(10))
+shifts: List[str] = ['morning', 'afternoon', 'night_1', 'night_2']
 demand: Dict[Tuple[int | str, str], int] = {
     (0, 'morning'): 2, (0, 'afternoon'): 2, (0, 'night_1'): 1, (0, 'night_2'): 1,
     (1, 'morning'): 1, (1, 'afternoon'): 2, (1, 'night_1'): 2, (1, 'night_2'): 2,
@@ -200,42 +238,14 @@ capabilities: Dict[int | str, List[int | str]] = {
     9: [3, 4, 5, 6, 7],
 }
 worker_availability: Dict[Tuple[int | str, str], bool] = {}
-shifts = ['morning', 'afternoon', 'night_1', 'night_2']
 
-for worker in workers:
-    for shift in shifts:
+for w in workers:
+    for s in shifts:
         # About 85% availability chance per worker per shift
-        worker_availability[(worker, shift)] = random.random() < 0.85
+        worker_availability[(w, s)] = random.random() < 0.85
 
-solution: Dict[Tuple[int | str, int | str, str], bool] = solve_assignment(workers, tasks, demand, specialties, capabilities, worker_availability, True)
+solution: Dict[Tuple[int | str, int | str, str], bool] = solve_assignment(workers, tasks, shifts, demand, specialties, capabilities, worker_availability, True)
+
 print("")
 
-col_width = 4
-v_sep = "│"
-h_line = "─"
-cross = "┼"
-
-for s in shifts:
-    print(f"{s.capitalize()} shift")
-
-    # Header row
-    header = " " * col_width + v_sep + v_sep.join(f"{w:^{col_width}}" for w in workers) + v_sep
-    print(header)
-
-    # Separator row with ┼ intersections
-    sep = h_line * col_width + cross
-    for _ in range(len(workers) - 1):
-        sep += h_line * col_width + cross
-    sep += h_line * col_width
-    print(sep)
-
-    # Data rows
-    for t in tasks:
-        row = f"{str(t):^{col_width}}" + v_sep
-        for w in workers:
-            val = solution.get((w, t, s), False)
-            row += f"{'X' if val else ' ':^{col_width}}" + v_sep
-        print(row)
-        print(sep)
-
-    print()
+printTable(solution, workers, tasks, shifts)
