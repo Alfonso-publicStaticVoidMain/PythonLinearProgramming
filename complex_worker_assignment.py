@@ -83,8 +83,14 @@ def solve_assignment(
     solver.parameters.search_branching = cp_model.FIXED_SEARCH
     status = solver.Solve(model)
 
+    if verbose:
+        print("Advanced usage: Step 1")
+        print(f"Problem solved in {format_duration(solver.wall_time)}")
+        print(f"Conflicts: {solver.NumConflicts()}")
+        print(f"Branches: {solver.NumBranches()}\n")
+
     if status not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-        if verbose: print("No solution found in phase 1.")
+        if verbose: print("No solution found in step 1.")
         return {}
 
     # Add a constraint to the model to reach the maximum specialty assignments
@@ -100,7 +106,7 @@ def solve_assignment(
     status = solver2.solve(model)
 
     if verbose:
-        print("Advanced usage:")
+        print("Advanced usage: Step 2")
         print(f"Problem solved in {format_duration(solver.wall_time)}")
         print(f"Conflicts: {solver.NumConflicts()}")
         print(f"Branches: {solver.NumBranches()}\n")
@@ -118,7 +124,7 @@ def solve_assignment(
             else:
                 print('Feasible solution found. Optimality cannot be guaranteed.')
 
-            print(f'Number of specialty assignments achieved = {solver.ObjectiveValue()}\n')
+            print(f'Number of specialty assignments achieved = {solver.ObjectiveValue()} out of {sum(demand.get((t, s), 0) for t in tasks for s in shifts)}\n')
             for w in workers:
                 for t in tasks:
                     for s in shifts:
