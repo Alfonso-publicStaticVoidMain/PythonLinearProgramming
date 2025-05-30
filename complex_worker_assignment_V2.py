@@ -44,16 +44,16 @@ def solve_assignment(
         # Maps each task to the List of the workers that have it as their specialty, ordered by their priority of assignment
         specialties: Dict[int | str, List[int | str]],
 
-        # Workers that are volunteers for night shifts, ordered. They will be chosen for night shifts over others if able
+        # Workers that are volunteers for night shifts, ordered by priority. They will be chosen for night shifts over others if able
         night_volunteers: List[int | str],
 
-        # Workers that are preferred for morning shifts, ordered.
-        morning_preference: List[int | str],  # Contains the workers which are preferred for morning shifts, ordered.
+        # Workers that are preferred for morning shifts, ordered by priority.
+        morning_preference: List[int | str],
 
-        # Workers that are preferred for afternoon shifts, ordered.
+        # Workers that are preferred for afternoon shifts, ordered by priority.
         afternoon_preference: List[int | str],
 
-        # If a pair (worker, shift) is present, that worker is available for that shift.
+        # Pairs of worker and shift where the worker is available for that shift.
         worker_availability: List[Tuple[int | str, str]],
 
         # Workers that can perform double shifts.
@@ -71,7 +71,7 @@ def solve_assignment(
 ) -> Dict[Tuple[int | str, int | str, str], bool]:
     model: CpModel = cp_model.CpModel()
 
-    # Define the variables and store them on a dictionary
+    # Define the variables and store them on a dictionary indexed by tuples of (worker, task, shift)
     vars: Dict[Tuple[int | str, int | str, str], IntVar] = {}
     for w in workers:
         for t in tasks:
@@ -87,22 +87,16 @@ def solve_assignment(
     for w in workers:
         # Each worker can have at most 2 shifts, or 1 if they are not in the double shift list
         if w in double_shift_availability:
-            model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in shifts) <= 2)
+            total_shifts: int = sum(vars.get((w, t, s), 0) for t in tasks for s in shifts)
+            model.Add(total_shifts <= 2)
             for s in shifts:
                 # Each worker can work at most 1 task each shift
                 model.Add(sum(vars.get((w, t, s), 0) for t in tasks) <= 1)
+            # A worker that works double shifts mustn't do it during night
+            model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in ['night_1', 'night_2']) == 0).OnlyEnforceIf(
+                total_shifts == 2)
         else:
             model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in shifts) <= 1)
-
-        # A worker that works double shifts mustn't do it during night
-
-        # A bool var is created, representing if a double shift was done
-        is_double_shift: IntVar = model.NewBoolVar(f'double_shift_{w}')
-        total_shifts: int = sum(vars.get((w, t, s), 0) for t in tasks for s in shifts)
-        model.Add(total_shifts == 2).OnlyEnforceIf(is_double_shift)
-
-        night_shifts = sum(vars.get((w, t, s), 0) for t in tasks for s in ['night_1', 'night_2'])
-        model.Add(night_shifts == 0).OnlyEnforceIf(is_double_shift)
 
     # Each task must meet its demand exactly on each shift
     for t in tasks:
@@ -189,7 +183,8 @@ def solve_assignment(
             else:
                 print('Feasible solution found. Optimality cannot be guaranteed.')
 
-            print(f'Number of specialty assignments achieved: {int(solver.ObjectiveValue())} out of {sum(demand.get((t, s), 0) for t in tasks for s in shifts)}')
+            print(
+                f'Number of specialty assignments achieved: {int(solver.ObjectiveValue())} out of {sum(demand.get((t, s), 0) for t in tasks for s in shifts)}')
             print(f'Number of workers assigned: {len({w for (w, t, s) in result})} out of {len(workers)}\n')
 
             for (w, t, s) in result:
@@ -205,7 +200,8 @@ def solve_assignment(
                         if result[w, t, s]:
                             print(f'\tWorker {w}')
 
-    elif verbose: print('No feasible solution found.')
+    elif verbose:
+        print('No feasible solution found.')
 
     return result
 
@@ -317,4 +313,6 @@ def printTable(
 
         print()
 
-solution: Dict[Tuple[int | str, int | str, str], bool] = solve_assignment(*generate_random_parameters(300, 15), verbose=True)
+
+solution: Dict[Tuple[int | str, int | str, str], bool] = solve_assignment(*generate_random_parameters(300, 15),
+                                                                          verbose=True)
