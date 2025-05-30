@@ -62,6 +62,7 @@ def solve_assignment(
         # State parameter to print the result via console when set to True.
         verbose: bool = False,
 
+        # Parameters for calculating the scores of the assignments, with their default values
         capability_base: int = 100,
         capability_decay: int = 10,
         specialty_bonus_max: int = 50,
@@ -78,16 +79,20 @@ def solve_assignment(
                 # Only create a variable if the worker can perform the task and is available in that shift
                 if (w, t) in worker_capabilities and (w, s) in worker_availability:
                     vars[w, t, s] = model.NewBoolVar(f'x_{w}_{t}_{s}')
+                # This choice was made for performance and to avoid creating variables that will all be later set to 0.
+                # Because of it we can't just call vars[w, t, s] recklessly or an exception will be thrown.
+                # We instead have to use vars.get((w, t, s), 0), which returns the value for the (w, t, s) key, or
+                # 0 if that key is absent from the dictionary.
 
     for w in workers:
         # Each worker can have at most 2 shifts, or 1 if they are not in the double shift list
         if w in double_shift_availability:
             model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in shifts) <= 2)
+            for s in shifts:
+                # Each worker can work at most 1 task each shift
+                model.Add(sum(vars.get((w, t, s), 0) for t in tasks) <= 1)
         else:
             model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in shifts) <= 1)
-        for s in shifts:
-            # Each worker can work at most 1 task each shift
-            model.Add(sum(vars.get((w, t, s), 0) for t in tasks) <= 1)
 
         # A worker that works double shifts mustn't do it during night
 
