@@ -6,27 +6,62 @@ from ortools.sat.python.cp_model import CpModel, IntVar
 from typing import List, Optional, Dict, Tuple
 
 
+def format_duration(seconds: float | int) -> str:
+    if seconds < 10:
+        return f"{seconds} seconds"
+    seconds_int = int(seconds)
+    if seconds_int < 60:
+        return f"{seconds_int} seconds"
+    elif seconds_int < 3600:
+        minutes = seconds_int // 60
+        rem_seconds = seconds_int % 60
+        return f"{minutes} minutes and {rem_seconds} seconds"
+    else:
+        hours = seconds_int // 3600
+        rem_seconds = seconds_int % 3600
+        minutes = rem_seconds // 60
+        rem_seconds = rem_seconds % 60
+        return f"{hours} hours, {minutes} minutes and {rem_seconds} seconds"
+
+
 def solve_assignment(
-        workers: List[int | str],  # Contains the IDs or names of the workers
-        tasks: List[int | str],  # Contains the different tasks, identified by an int or a string
+        # Names or IDs of the workers.
+        workers: List[int | str],
+
+        # Names or identifiers of the tasks.
+        tasks: List[int | str],
+
+        # Names of the shifts. For now, they are assumed ['morning', 'afternoon', 'night_1', 'night_2']
         shifts: List[str],
-        # Contains the names of the different shifts. For now, they are assumed ['morning', 'afternoon', 'night_1', 'night_2']
+
+        # For each task and shift, maps it to the number of workers demanded for it.
         demand: Dict[Tuple[int | str, str], int],
-        # For each task and shift, maps it to the number of workers demanded for it
-        worker_capabilities: Dict[Tuple[int | str, int | str], int],
+
         # Maps each tuple of worker and task to their capability on that task, 1 being their main specialty and higher numbers meaning less capability.
         # If a pair of (worker, task) is unassigned in worker_capabilities, it should be assumed the worker is incapable of performing the task.
+        worker_capabilities: Dict[Tuple[int | str, int | str], int],
+
+        # Maps each task to the List of the workers that have it as their specialty, ordered by their priority of assignment
         specialties: Dict[int | str, List[int | str]],
-        # For each task, maps it to a List of the workers that have that task as their specialty, ordered by their priority of assignment
+
+        # Workers that are volunteers for night shifts, ordered. They will be chosen for night shifts over others if able
         night_volunteers: List[int | str],
-        # Contains the workers that are night shift volunteers, and should be prioritized when assigning those shifts over other preference lists where they appear, according to their order on the List.
+
+        # Workers that are preferred for morning shifts, ordered.
         morning_preference: List[int | str],  # Contains the workers which are preferred for morning shifts, ordered.
+
+        # Workers that are preferred for afternoon shifts, ordered.
         afternoon_preference: List[int | str],
-        # Contains the workers which are preferred for afternoon shifts, ordered.
+
+        # If a pair (worker, shift) is present, that worker is available for that shift.
         worker_availability: List[Tuple[int | str, str]],
-        # List of pairs (worker, shift) that are possible. If a pair is missing, the worker is unavailable for that shift.
-        double_shift_availability: List[int | str],  # List of workers that can perform double shifts
-        verbose: bool = False,  # Parameter to print the result via console or not
+
+        # Workers that can perform double shifts.
+        double_shift_availability: List[int | str],
+
+        # State parameter to print the result via console when set to True.
+        verbose: bool = False,
+
         capability_base: int = 100,
         capability_decay: int = 10,
         specialty_bonus_max: int = 50,
@@ -40,8 +75,7 @@ def solve_assignment(
     for w in workers:
         for t in tasks:
             for s in shifts:
-                # A worker cannot be assigned to a task they can't perform or is not available for
-                # If that's the case, do not even create the variable
+                # Only create a variable if the worker can perform the task and is available in that shift
                 if (w, t) in worker_capabilities and (w, s) in worker_availability:
                     vars[w, t, s] = model.NewBoolVar(f'x_{w}_{t}_{s}')
 
@@ -54,9 +88,12 @@ def solve_assignment(
         for s in shifts:
             # Each worker can work at most 1 task each shift
             model.Add(sum(vars.get((w, t, s), 0) for t in tasks) <= 1)
+
         # A worker that works double shifts mustn't do it during night
-        is_double_shift = model.NewBoolVar(f'double_shift_{w}')
-        total_shifts = sum(vars.get((w, t, s), 0) for t in tasks for s in shifts)
+
+        # A bool var is created, representing if a double shift was done
+        is_double_shift: IntVar = model.NewBoolVar(f'double_shift_{w}')
+        total_shifts: int = sum(vars.get((w, t, s), 0) for t in tasks for s in shifts)
         model.Add(total_shifts == 2).OnlyEnforceIf(is_double_shift)
 
         night_shifts = sum(vars.get((w, t, s), 0) for t in tasks for s in ['night_1', 'night_2'])
@@ -147,7 +184,8 @@ def solve_assignment(
             else:
                 print('Feasible solution found. Optimality cannot be guaranteed.')
 
-            print(f'Number of specialty assignments achieved = {solver.ObjectiveValue()} out of {sum(demand.get((t, s), 0) for t in tasks for s in shifts)}\n')
+            print(f'Number of specialty assignments achieved: {int(solver.ObjectiveValue())} out of {sum(demand.get((t, s), 0) for t in tasks for s in shifts)}')
+            print(f'Number of workers assigned: {len({w for (w, t, s) in result})} out of {len(workers)}\n')
 
             for (w, t, s) in result:
                 if result[w, t, s]:
@@ -165,24 +203,6 @@ def solve_assignment(
     elif verbose: print('No feasible solution found.')
 
     return result
-
-
-def format_duration(seconds: float | int) -> str:
-    if seconds < 10:
-        return f"{seconds} seconds"
-    seconds_int = int(seconds)
-    if seconds_int < 60:
-        return f"{seconds_int} seconds"
-    elif seconds_int < 3600:
-        minutes = seconds_int // 60
-        rem_seconds = seconds_int % 60
-        return f"{minutes} minutes and {rem_seconds} seconds"
-    else:
-        hours = seconds_int // 3600
-        rem_seconds = seconds_int % 3600
-        minutes = rem_seconds // 60
-        rem_seconds = rem_seconds % 60
-        return f"{hours} hours, {minutes} minutes and {rem_seconds} seconds"
 
 
 def generate_random_parameters(
