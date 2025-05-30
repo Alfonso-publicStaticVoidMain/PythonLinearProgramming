@@ -9,15 +9,12 @@ from typing import List, Optional, Dict, Tuple
 def solve_assignment(
         workers: List[int | str],  # Contains the IDs or names of the workers
         tasks: List[int | str],  # Contains the different tasks, identified by an int or a string
-        shifts: List[str],
-        demand: Dict[Tuple[int | str, str], int],
-        # For each task and shift, maps it to the number of workers demanded for it
-        specialties: Dict[int | str, List[int | str]],
-        # For each task, maps it to a List of the workers that have that task as their specialty, ordered by their priority of assignment
+        shifts: List[str], # Contains the names of the different shifts. For now, they are assumed ['morning', 'afternoon', 'night_1', 'night_2']
+        demand: Dict[Tuple[int | str, str], int], # For each task and shift, maps it to the number of workers demanded for it
+        specialties: Dict[int | str, List[int | str]], # For each task, maps it to a List of the workers that have that task as their specialty, ordered by their priority of assignment
         capabilities: Dict[int | str, List[int | str]],
         # For each task, maps it to a List of the workers that can perform that task without being their specialty
-        worker_availability: Dict[Tuple[int | str, str], bool],
-        # For each worker and shift, maps it to true or false depending on if the worker is available for that shift
+        worker_availability: Dict[Tuple[int | str, str], bool], # For each worker and shift, maps it to true or false depending on if the worker is available for that shift
         verbose: bool = False,  # Parameter to print the result via console or not
         max_score: int = 1000,  # Base score a single assignment can reach
         specialty_weight: float = 1.0,  # Weight for assigning a worker to its specialty
