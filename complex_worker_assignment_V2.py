@@ -92,9 +92,12 @@ def solve_assignment(
             for s in shifts:
                 # Each worker can work at most 1 task each shift
                 model.Add(sum(vars.get((w, t, s), 0) for t in tasks) <= 1)
+            # We create a double shift variable for the worker
+            double_shift: IntVar = model.NewBoolVar(f'double_shift_{w}')
+            model.Add(total_shifts == 2).OnlyEnforceIf(double_shift)
+            model.Add(total_shifts != 2).OnlyEnforceIf(double_shift.Not())
             # A worker that works double shifts mustn't do it during night
-            model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in ['night_1', 'night_2']) == 0).OnlyEnforceIf(
-                total_shifts == 2)
+            model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in ['night_1', 'night_2']) == 0).OnlyEnforceIf(double_shift)
         else:
             model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in shifts) <= 1)
 
@@ -171,11 +174,13 @@ def solve_assignment(
 
     result: Dict[Tuple[int | str, int | str, str], bool] = {}
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-
+        # Store in the result dict the found solution
         for w in workers:
             for t in tasks:
                 for s in shifts:
                     result[w, t, s] = bool(solver.Value(vars[w, t, s])) if (w, t, s) in vars else False
+
+        workers_with_double_shifts: List[int | str] = [w for w in workers if sum(result[w, t, s] for t in tasks for s in shifts) == 2]
 
         if verbose:
             if status == cp_model.OPTIMAL:
@@ -183,22 +188,29 @@ def solve_assignment(
             else:
                 print('Feasible solution found. Optimality cannot be guaranteed.')
 
-            print(
-                f'Number of specialty assignments achieved: {int(solver.ObjectiveValue())} out of {sum(demand.get((t, s), 0) for t in tasks for s in shifts)}')
-            print(f'Number of workers assigned: {len({w for (w, t, s) in result})} out of {len(workers)}\n')
+            workers_assigned: int = len({w for (w, t, s) in result})
+            demanded_tasks: int = sum(demand.get((t, s), 0) for t in tasks for s in shifts)
+            print(f'Number of specialty assignments achieved: {int(solver.ObjectiveValue())} out of {demanded_tasks} ({100*solver.ObjectiveValue()/demanded_tasks:.2f}%)')
+            print(f'Number of workers assigned: {workers_assigned} out of {len(workers)} ({100*float(workers_assigned)/len(workers):.2f}%)\n')
 
             for (w, t, s) in result:
                 if result[w, t, s]:
-                    print(f'Worker {w} assigned to Task {t} on the {s} shift')
+                    double = 'DOUBLE' if w in workers_with_double_shifts else ''
+                    poly = f'POLYVALENCE: {worker_capabilities[w, t]}' if w not in specialties[t] else ''
+                    print(
+                        f"Worker {w:<3} -> Task {t:<3} | {s:<10} "
+                        f"{double:<12}{poly:<15}"
+                    )
 
             print("")
 
-            for t in tasks:
-                for s in shifts:
-                    print(f'Task {t} on {s} shift assigned to:')
+            for s in shifts:
+                print(f'{s.capitalize()} shift:')
+                for t in tasks:
+                    print(f'Task {t} assigned to:')
                     for w in workers:
                         if result[w, t, s]:
-                            print(f'\tWorker {w}')
+                            print(f'\tWorker {w:<3}', f'\tPOLYVALENCE: {worker_capabilities[w, t]}' if w not in specialties[t] else '')
 
     elif verbose:
         print('No feasible solution found.')
