@@ -109,14 +109,16 @@ def solve_assignment(
     # Define the score of assigning a worker to a task on a shift, according to its position on the lists and if it's their specialty
     scores: Dict[Tuple[int | str, int | str, str], int] = {}
     for (w, t, s) in vars:
+
         # Capability score
         capability_score = max(0, capability_base - capability_decay * (worker_capabilities[w, t] - 1))
+
         # Specialty score
         specialty_list = specialties.get(t, [])
         specialty_score = 0
         if w in specialty_list:
-            specialty_rank = specialty_list.index(w)
-            specialty_score = max(0, specialty_bonus_max - specialty_rank)
+            specialty_score = max(0, specialty_bonus_max - specialty_list.index(w))
+
         # Shift preference or penalty
         shift_bonus = 0
         if s.startswith("night"):
