@@ -29,10 +29,10 @@ def solve_assignment(
         workers: List[int | str],
 
         # Names or identifiers of the tasks.
-        tasks: List[int | str],
+        tasks: List[int | str] | Dict[int, str],
 
         # Names of the shifts. For now, they are assumed ['morning', 'afternoon', 'night_1', 'night_2']
-        shifts: List[str],
+        shifts: List[int | str] | Dict[int, str],
 
         # For each task and shift, maps it to the number of workers demanded for it.
         demand: Dict[Tuple[int | str, str], int],
@@ -317,4 +317,4 @@ def printTable(
 
         print()
 
-solution: Dict[Tuple[int | str, int | str, str], bool] = solve_assignment(*generate_random_parameters(300, 15), verbose=True)
+#solution: Dict[Tuple[int | str, int | str, str], bool] = solve_assignment(*generate_random_parameters(300, 15), verbose=True)
