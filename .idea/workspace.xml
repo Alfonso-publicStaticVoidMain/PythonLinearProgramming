@@ -4,26 +4,23 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
+<<<<<<< HEAD
     <list default="true" id="00f0da4e-6e5d-4b64-9772-babefe635ed5" name="Changes" comment="">
       <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+=======
+    <list default="true" id="fd6ce6cc-75c1-496c-99dd-c1aee2ad9ff6" name="Changes" comment="">
+>>>>>>> b3d4e6d39e903018aa8ce4a67b5c0871d7b627dd
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/complex_worker_assignment_V2.py" beforeDir="false" afterPath="$PROJECT_DIR$/complex_worker_assignment_V2.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
-  <component name="FileTemplateManagerImpl">
-    <option name="RECENT_TEMPLATES">
-      <list>
-        <option value="Python Script" />
-      </list>
-    </option>
-  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+<<<<<<< HEAD
   <component name="GitHubPullRequestSearchHistory">{
   &quot;lastFilter&quot;: {
     &quot;state&quot;: &quot;OPEN&quot;,
@@ -36,16 +33,20 @@
     &quot;accountId&quot;: &quot;a36af6c2-44eb-4f08-b43d-a347e2e7d1d3&quot;
   }
 }</component>
+=======
+>>>>>>> b3d4e6d39e903018aa8ce4a67b5c0871d7b627dd
   <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
   &quot;associatedIndex&quot;: 4
 }</component>
-  <component name="ProjectId" id="2xmJdahay8lyheGS82pQi70EGhx" />
+  <component name="ProjectId" id="2xr2jNTU1PQbajUoXxuycuP7BG7" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
+<<<<<<< HEAD
     &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
     &quot;Python.ILP_solver_test_V2.executor&quot;: &quot;Run&quot;,
     &quot;Python.complex_worker_assignment.executor&quot;: &quot;Run&quot;,
@@ -110,8 +111,18 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+=======
+    &quot;Python.complex_worker_assignment_V2.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RunManager">
+>>>>>>> b3d4e6d39e903018aa8ce4a67b5c0871d7b627dd
     <configuration name="complex_worker_assignment_V2" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="PythonLinearProgramming" />
+      <module name="Linear Programming" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
@@ -158,8 +169,6 @@
       <list>
         <item itemvalue="Python.test" />
         <item itemvalue="Python.complex_worker_assignment_V2" />
-        <item itemvalue="Python.complex_worker_assignment" />
-        <item itemvalue="Python.ILP_solver_test_V2" />
       </list>
     </recent_temporary>
   </component>
@@ -172,11 +181,11 @@
   </component>
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
-      <changelist id="00f0da4e-6e5d-4b64-9772-babefe635ed5" name="Changes" comment="" />
-      <created>1748537404306</created>
+      <changelist id="fd6ce6cc-75c1-496c-99dd-c1aee2ad9ff6" name="Changes" comment="" />
+      <created>1748682006547</created>
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
-      <updated>1748537404306</updated>
+      <updated>1748682006547</updated>
     </task>
     <servers />
   </component>

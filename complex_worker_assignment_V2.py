@@ -44,16 +44,16 @@ def solve_assignment(
         # Maps each task to the List of the workers that have it as their specialty, ordered by their priority of assignment
         specialties: Dict[int | str, List[int | str]],
 
-        # Workers that are volunteers for night shifts, ordered. They will be chosen for night shifts over others if able
+        # Workers that are volunteers for night shifts, ordered by priority. They will be chosen for night shifts over others if able
         night_volunteers: List[int | str],
 
-        # Workers that are preferred for morning shifts, ordered.
-        morning_preference: List[int | str],  # Contains the workers which are preferred for morning shifts, ordered.
+        # Workers that are preferred for morning shifts, ordered by priority.
+        morning_preference: List[int | str],
 
-        # Workers that are preferred for afternoon shifts, ordered.
+        # Workers that are preferred for afternoon shifts, ordered by priority.
         afternoon_preference: List[int | str],
 
-        # If a pair (worker, shift) is present, that worker is available for that shift.
+        # Pairs of worker and shift where the worker is available for that shift.
         worker_availability: List[Tuple[int | str, str]],
 
         # Workers that can perform double shifts.
@@ -71,7 +71,7 @@ def solve_assignment(
 ) -> Dict[Tuple[int | str, int | str, str], bool]:
     model: CpModel = cp_model.CpModel()
 
-    # Define the variables and store them on a dictionary
+    # Define the variables and store them on a dictionary indexed by tuples of (worker, task, shift)
     vars: Dict[Tuple[int | str, int | str, str], IntVar] = {}
     for w in workers:
         for t in tasks:
@@ -87,22 +87,19 @@ def solve_assignment(
     for w in workers:
         # Each worker can have at most 2 shifts, or 1 if they are not in the double shift list
         if w in double_shift_availability:
-            model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in shifts) <= 2)
+            total_shifts: int = sum(vars.get((w, t, s), 0) for t in tasks for s in shifts)
+            model.Add(total_shifts <= 2)
             for s in shifts:
                 # Each worker can work at most 1 task each shift
                 model.Add(sum(vars.get((w, t, s), 0) for t in tasks) <= 1)
+            # We create a double shift variable for the worker
+            double_shift: IntVar = model.NewBoolVar(f'double_shift_{w}')
+            model.Add(total_shifts == 2).OnlyEnforceIf(double_shift)
+            model.Add(total_shifts != 2).OnlyEnforceIf(double_shift.Not())
+            # A worker that works double shifts mustn't do it during night
+            model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in ['night_1', 'night_2']) == 0).OnlyEnforceIf(double_shift)
         else:
             model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in shifts) <= 1)
-
-        # A worker that works double shifts mustn't do it during night
-
-        # A bool var is created, representing if a double shift was done
-        is_double_shift: IntVar = model.NewBoolVar(f'double_shift_{w}')
-        total_shifts: int = sum(vars.get((w, t, s), 0) for t in tasks for s in shifts)
-        model.Add(total_shifts == 2).OnlyEnforceIf(is_double_shift)
-
-        night_shifts = sum(vars.get((w, t, s), 0) for t in tasks for s in ['night_1', 'night_2'])
-        model.Add(night_shifts == 0).OnlyEnforceIf(is_double_shift)
 
     # Each task must meet its demand exactly on each shift
     for t in tasks:
@@ -112,14 +109,16 @@ def solve_assignment(
     # Define the score of assigning a worker to a task on a shift, according to its position on the lists and if it's their specialty
     scores: Dict[Tuple[int | str, int | str, str], int] = {}
     for (w, t, s) in vars:
+
         # Capability score
         capability_score = max(0, capability_base - capability_decay * (worker_capabilities[w, t] - 1))
+
         # Specialty score
         specialty_list = specialties.get(t, [])
         specialty_score = 0
         if w in specialty_list:
-            specialty_rank = specialty_list.index(w)
-            specialty_score = max(0, specialty_bonus_max - specialty_rank)
+            specialty_score = max(0, specialty_bonus_max - specialty_list.index(w))
+
         # Shift preference or penalty
         shift_bonus = 0
         if s.startswith("night"):
@@ -177,11 +176,13 @@ def solve_assignment(
 
     result: Dict[Tuple[int | str, int | str, str], bool] = {}
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-
+        # Store in the result dict the found solution
         for w in workers:
             for t in tasks:
                 for s in shifts:
                     result[w, t, s] = bool(solver.Value(vars[w, t, s])) if (w, t, s) in vars else False
+
+        workers_with_double_shifts: List[int | str] = [w for w in workers if sum(result[w, t, s] for t in tasks for s in shifts) == 2]
 
         if verbose:
             if status == cp_model.OPTIMAL:
@@ -189,23 +190,32 @@ def solve_assignment(
             else:
                 print('Feasible solution found. Optimality cannot be guaranteed.')
 
-            print(f'Number of specialty assignments achieved: {int(solver.ObjectiveValue())} out of {sum(demand.get((t, s), 0) for t in tasks for s in shifts)}')
-            print(f'Number of workers assigned: {len({w for (w, t, s) in result})} out of {len(workers)}\n')
+            workers_assigned: int = len({w for (w, t, s) in result})
+            demanded_tasks: int = sum(demand.get((t, s), 0) for t in tasks for s in shifts)
+            print(f'Number of specialty assignments achieved: {int(solver.ObjectiveValue())} out of {demanded_tasks} ({100*solver.ObjectiveValue()/demanded_tasks:.2f}%)')
+            print(f'Number of workers assigned: {workers_assigned} out of {len(workers)} ({100*float(workers_assigned)/len(workers):.2f}%)\n')
 
             for (w, t, s) in result:
                 if result[w, t, s]:
-                    print(f'Worker {w} assigned to Task {t} on the {s} shift')
+                    double = 'DOUBLE' if w in workers_with_double_shifts else ''
+                    poly = f'POLYVALENCE: {worker_capabilities[w, t]}' if w not in specialties[t] else ''
+                    print(
+                        f"Worker {w:<3} -> Task {t:<3} | {s:<10} "
+                        f"{double:<12}{poly:<15}"
+                    )
 
             print("")
 
-            for t in tasks:
-                for s in shifts:
-                    print(f'Task {t} on {s} shift assigned to:')
+            for s in shifts:
+                print(f'{s.capitalize()} shift:')
+                for t in tasks:
+                    print(f'Task {t} assigned to:')
                     for w in workers:
                         if result[w, t, s]:
-                            print(f'\tWorker {w}')
+                            print(f'\tWorker {w:<3}', f'\tPOLYVALENCE: {worker_capabilities[w, t]}' if w not in specialties[t] else '')
 
-    elif verbose: print('No feasible solution found.')
+    elif verbose:
+        print('No feasible solution found.')
 
     return result
 
@@ -318,3 +328,4 @@ def printTable(
         print()
 
 #solution: Dict[Tuple[int | str, int | str, str], bool] = solve_assignment(*generate_random_parameters(300, 15), verbose=True)
+
