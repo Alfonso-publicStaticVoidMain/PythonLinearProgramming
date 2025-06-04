@@ -31,8 +31,11 @@ def solve_assignment(
         # Names or identifiers of the tasks.
         tasks: List[int | str] | Dict[int, str],
 
-        # Names of the shifts. For now, they are assumed ['morning', 'afternoon', 'night_1', 'night_2']
+        # Names of the shifts.
         shifts: List[int | str] | Dict[int, str],
+
+        # List of shifts that are incompatible with double shifts.
+        double_incompatibilities: List[int | str],
 
         # For each task and shift, maps it to the number of workers demanded for it.
         demand: Dict[Tuple[int | str, str], int],
@@ -96,18 +99,18 @@ def solve_assignment(
             double_shift: IntVar = model.NewBoolVar(f'double_shift_{w}')
             model.Add(total_shifts == 2).OnlyEnforceIf(double_shift)
             model.Add(total_shifts != 2).OnlyEnforceIf(double_shift.Not())
-            # A worker that works double shifts mustn't do it during night
-            model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in ['night_1', 'night_2']) == 0).OnlyEnforceIf(double_shift)
+            # A worker that works double shifts mustn't do it during incompatible shifts
+            model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in double_incompatibilities) == 0).OnlyEnforceIf(double_shift)
         else:
             model.Add(sum(vars.get((w, t, s), 0) for t in tasks for s in shifts) <= 1)
 
     # Each task must meet its demand exactly on each shift
     for t in tasks:
         for s in shifts:
-            model.Add(sum(vars.get((w, t, s), 0) for w in workers) == demand[t, s])
+            model.Add(sum(vars.get((w, t, s), 0) for w in workers) == demand.get((t, s), 0))
 
     # Define the score of assigning a worker to a task on a shift, according to its position on the lists and if it's their specialty
-    scores: Dict[Tuple[int | str, int | str, str], int] = {}
+    scores: Dict[Tuple[int | str, int | str, int | str], int] = {}
     for (w, t, s) in vars:
 
         # Capability score
@@ -121,16 +124,16 @@ def solve_assignment(
 
         # Shift preference or penalty
         shift_bonus = 0
-        if s.startswith("night"):
+        if s in double_incompatibilities:
             if w in night_volunteers:
                 shift_bonus = max(0, shift_bonus_max - night_volunteers.index(w))
             else:
                 shift_bonus -= night_shift_penalty  # Penalty for assigning non-volunteer to a night shift
-        elif s == "morning" and w in morning_preference:
+        elif (s == "morning" or s == 1) and w in morning_preference:
             shift_bonus = max(0, shift_bonus_max - morning_preference.index(w))
-        elif s == "afternoon" and w in afternoon_preference:
+        elif (s == "afternoon" or s == 2) and w in afternoon_preference:
             shift_bonus = max(0, shift_bonus_max - afternoon_preference.index(w))
-        scores[(w, t, s)] = capability_score + specialty_score + shift_bonus
+        scores[w, t, s] = capability_score + specialty_score + shift_bonus
 
     # Create a List of variables where it represents the assignment of a worker into its specialty
     specialties_assigned: List[IntVar] = []
@@ -228,6 +231,7 @@ def generate_random_parameters(
     List[int],  # workers
     List[int],  # tasks
     List[str],  # shifts
+    List[int | str], # double_incompatibilities
     Dict[Tuple[int, str], int],  # demand
     Dict[Tuple[int, int], int],  # worker_capabilities
     Dict[int, List[int]],  # specialties
@@ -240,6 +244,7 @@ def generate_random_parameters(
     workers = list(range(num_workers))
     tasks = list(range(num_tasks))
     shifts = ['morning', 'afternoon', 'night_1', 'night_2']
+    double_incompatibilities = ['night_1', 'night_2']
 
     # Demand
     demand = {}
@@ -281,6 +286,7 @@ def generate_random_parameters(
         workers,
         tasks,
         shifts,
+        double_incompatibilities,
         demand,
         worker_capabilities,
         specialties,
@@ -327,5 +333,5 @@ def printTable(
 
         print()
 
-#solution: Dict[Tuple[int | str, int | str, str], bool] = solve_assignment(*generate_random_parameters(300, 15), verbose=True)
+# solution: Dict[Tuple[int | str, int | str, str], bool] = solve_assignment(*generate_random_parameters(300, 15), verbose=True)
 
