@@ -1,5 +1,4 @@
 import random
-from pickle import FALSE
 
 from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import CpModel, IntVar
@@ -173,9 +172,9 @@ def solve_assignment(
 
     if verbose:
         print("Advanced usage: Step 2")
-        print(f"Problem solved in {format_duration(solver.wall_time)}")
-        print(f"Conflicts: {solver.NumConflicts()}")
-        print(f"Branches: {solver.NumBranches()}\n")
+        print(f"Problem solved in {format_duration(solver2.wall_time)}")
+        print(f"Conflicts: {solver2.NumConflicts()}")
+        print(f"Branches: {solver2.NumBranches()}\n")
 
     result: Dict[Tuple[int | str, int | str, str], bool] = {}
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
@@ -333,5 +332,5 @@ def printTable(
 
         print()
 
-# solution: Dict[Tuple[int | str, int | str, str], bool] = solve_assignment(*generate_random_parameters(300, 15), verbose=True)
+solution: Dict[Tuple[int | str, int | str, str], bool] = solve_assignment(*generate_random_parameters(300, 15), verbose=True)
 
