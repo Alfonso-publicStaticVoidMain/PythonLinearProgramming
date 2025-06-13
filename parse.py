@@ -42,7 +42,6 @@ def parse_trabajadores_puestos() -> tuple[
     dict_especialidades: dict[PuestoTrabajo, list[Trabajador]] = defaultdict(list)
     for entry in puestos_data:
         # Se parsea la información del JSON en un objeto de Trabajador, PuestoTrabajo y NivelDesempeno
-        #trabajador: Trabajador = Trabajador.from_id(entry["Trabajador"]["id"]) if Trabajador.from_id(entry["Trabajador"]["id"]) is not None else parse_data_into(Trabajador, entry["Trabajador"])
         trabajador: Trabajador = Trabajador.get_or_create(entry["Trabajador"])
         puesto: PuestoTrabajo = PuestoTrabajo.get_or_create(entry["PuestoTrabajo"])
         nivel: NivelDesempeno = parse_data_into(NivelDesempeno, entry["NivelDesempeno"])

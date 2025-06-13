@@ -44,8 +44,8 @@ def parse_data_into(cls: Type[T], data: dict[str, Any]) -> T:
 
 def get_by_id(collection: Iterable[T], cls: Type[T], id_: int | str | float, fallback: T | None = None) -> T | None:
     """
-    Busca en un iterable de tipo T (con atributo id: int) el único objeto con un cierto ID.
-    :param collection: Iterable de tipo T, el cual debe tener implementado un atributo id: int.
+    Busca en un iterable de tipo T (que extienda Identificable) el único objeto con un cierto ID.
+    :param collection: Iterable de tipo T, el cual debe tener extender de Identificable.
     :param cls: Clase T contenida en el iterable.
     :param id_: ID que buscar dentro del iterable.
     :param fallback: Valor por defecto que retornar si no se encuentra el ID. Por defecto es None.
@@ -103,6 +103,9 @@ class Identificable:
         """
         return hash((type(self), self.id))
 
+    def __format__(self: Trabajador, format_spec: str) -> str:
+        return format(str(self), format_spec)
+
     @classmethod
     def get_registro(cls: Type[T]) -> dict[int, T]:
         """
@@ -144,10 +147,6 @@ class Identificable:
         instance = cls.from_id(obj_id)
         return instance if instance is not None else parse_data_into(cls, data)
 
-    @property
-    def registros(self) -> dict[type, dict[int, Identificable]]:
-        return self._registros
-
 
 @dataclass(eq=False, slots=True)
 class Trabajador(Identificable):
@@ -161,16 +160,14 @@ class Trabajador(Identificable):
 
     def actualizar_capacidades(self: Trabajador, puesto: PuestoTrabajo, nivel: NivelDesempeno) -> None:
         self.capacidades[puesto] = nivel
-        if nivel.id == 1: self.especialidades.add(puesto)
+        if nivel.id == 1 and puesto not in self.especialidades:
+            self.especialidades.add(puesto)
 
     def __str__(self: Trabajador) -> str:
         return f'{self.id}'
 
     def __repr__(self: Trabajador) -> str:
         return f'Trabajador {self.id} - {self.nombre} {self.apellidos}'
-
-    def __format__(self: Trabajador, format_spec: str) -> str:
-        return format(str(self), format_spec)
 
 
 @dataclass(eq=False, slots=True)
@@ -180,6 +177,7 @@ class TrabajadorPuestoTrabajo(Identificable):
     nivel_desempeno: NivelDesempeno
 
     def __post_init__(self: TrabajadorPuestoTrabajo) -> None:
+        self.trabajador.actualizar_capacidades(self.puesto_trabajo, self.nivel_desempeno)
         super(TrabajadorPuestoTrabajo, self).__post_init__()
 
     @property
@@ -220,9 +218,6 @@ class PuestoTrabajo(Identificable):
     def __repr__(self: PuestoTrabajo) -> str:
         return f'PuestoTrabajo(id={self.id} {self.nombre_es})'
 
-    def __format__(self: PuestoTrabajo, format_spec: str) -> str:
-        return format(str(self), format_spec)
-
 
 @dataclass(eq=False, slots=True)
 class NivelDesempeno(Identificable):
@@ -236,9 +231,6 @@ class NivelDesempeno(Identificable):
 
     def __repr__(self: NivelDesempeno) -> str:
         return f'NivelDesempeno({self.id}, {self.nombre_es})'
-
-    def __format__(self: NivelDesempeno, format_spec: str) -> str:
-        return format(str(self), format_spec)
 
 
 class TipoJornada(Enum):
@@ -285,10 +277,8 @@ class Jornada(Enum):
         return None
 
 
-
 @dataclass(eq=False, slots=True)
-class Demanda:
-    id: int
+class Demanda(Identificable):
     fecha: date
     jornada_id: int
     jornada: Jornada
@@ -298,30 +288,24 @@ class Demanda:
     operacion_id: int
     trafico_internacional: bool
     buque: str
-    puestos_demandados: list[DemandasPuestosTrabajos] = field(default_factory=list)
+    puestos_demandados: set[DemandasPuestosTrabajos] = field(default_factory=set)
 
-    def __post_init__(self: Demanda):
-        object.__setattr__(self, 'id', int(self.id))
+    def __post_init__(self: Demanda) -> None:
         if isinstance(self.fecha, str):
             parsed_date = datetime.strptime(self.fecha, "%Y-%m-%d").date()
             object.__setattr__(self, 'fecha', parsed_date)
         object.__setattr__(self, 'jornada_id', int(self.jornada_id))
+        object.__setattr__(self, 'jornada', Jornada.from_id(self.jornada_id))
         object.__setattr__(self, 'escala_id', int(self.escala_id))
         object.__setattr__(self, 'muelle_id', int(self.muelle_id))
         object.__setattr__(self, 'empresa_id', int(self.empresa_id))
         object.__setattr__(self, 'operacion_id', int(self.operacion_id))
         object.__setattr__(self, 'trafico_internacional', parse_bool(self.trafico_internacional))
-
-    def __eq__(self: Demanda, other: Demanda):
-        return isinstance(other, Demanda) and self.id == other.id
-
-    def __hash__(self: Demanda):
-        return hash(self.id)
+        super(Demanda, self).__post_init__()
 
 
 @dataclass(eq=False, slots=True)
-class DemandasPuestosTrabajos:
-    id: int
+class DemandasPuestosTrabajos(Identificable):
     num_trabajadores: int
     puesto_trabajo_id: int
     puesto_trabajo: PuestoTrabajo
@@ -330,15 +314,13 @@ class DemandasPuestosTrabajos:
     fecha: date
 
     def __post_init__(self: DemandasPuestosTrabajos):
-        object.__setattr__(self, 'id', int(self.id))
         object.__setattr__(self, 'puesto_trabajo_id', int(self.puesto_trabajo_id))
+        object.__setattr__(self, 'puesto_trabajo', PuestoTrabajo.from_id(self.puesto_trabajo_id))
         object.__setattr__(self, 'demanda_id', int(self.demanda_id))
-
-    def __eq__(self: DemandasPuestosTrabajos, other: DemandasPuestosTrabajos):
-        return isinstance(other, DemandasPuestosTrabajos) and self.id == other.id
-
-    def __hash__(self: DemandasPuestosTrabajos):
-        return hash(self.id)
+        object.__setattr__(self, 'demanda', Demanda.from_id(self.demanda_id))
+        puestos_demandados: set[DemandasPuestosTrabajos] = self.demanda.puestos_demandados
+        if self not in puestos_demandados: puestos_demandados.add(self)
+        super(DemandasPuestosTrabajos, self).__post_init__()
 
 
 def test_trabajador_registry():
