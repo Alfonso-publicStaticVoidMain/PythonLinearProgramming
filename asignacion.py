@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import CpModel, IntVar
 
@@ -54,7 +56,7 @@ def realizar_asignacion(
 ) -> dict[tuple[Trabajador, PuestoTrabajo, Jornada], bool]:
 
     model: CpModel = cp_model.CpModel()
-    jornadas_puede_doblar: set[Jornada] = {jornada for jornada in jornadas if jornada.puede_doblar}
+    jornadas_no_puede_doblar: set[Jornada] = {jornada for jornada in jornadas if not jornada.puede_doblar}
     jornadas_noche: set[Jornada] = {jornada for jornada in jornadas if jornada.tipo_jornada == TipoJornada.NOCHE}
 
     # Se precomputan varios conjuntos para comprobaciones de membresía más rápidas; O(1) en sets contra O(n) en listas.
@@ -65,6 +67,18 @@ def realizar_asignacion(
     sets_especialidades: dict[PuestoTrabajo, set[Trabajador]] = {}
     for puesto, lista_trabajadores in especialidades.items():
         sets_especialidades[puesto] = set(lista_trabajadores)
+
+    # trabajador -> Lista de variables en las que se está asignando a ese trabajador a algún puesto y jornada.
+    vars_por_trabajador: dict[Trabajador, list[IntVar]] = defaultdict(list)
+    # (trabajador, jornada) -> Lista de variables en las que se está asignando a ese trabajador a algún puesto
+    # en esa jornada.
+    vars_por_trabajador_y_jornada: dict[tuple[Trabajador, Jornada], list[IntVar]] = defaultdict(list)
+    # trabajador -> Lista de variables en las que se está asignando a ese trabajador a algún puesto en una jornada
+    # que no permite dobles.
+    vars_por_trabajador_en_no_puede_doblar: dict[Trabajador, list[IntVar]] = defaultdict(list)
+    # (puesto, jornada) -> Lista de variables en las que se está asignando a algún trabajador a ese puesto en esa
+    # jornada.
+    vars_por_puesto_y_jornada: dict[tuple[PuestoTrabajo, Jornada], list[IntVar]] = defaultdict(list)
 
     # Define the variables and store them on a dictionary indexed by tuples of (worker, task, shift)
     vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar] = {}
@@ -78,18 +92,31 @@ def realizar_asignacion(
                 # vars[trabajador, puesto, jornada], o nos arriesgamos a lanzar una excepción por intentar acceder
                 # a un índice inexistente. En su lugar, habrá que usar vars.get((trabajador, puesto, jornada), 0)
                 if puesto in trabajador.capacidades and (trabajador, jornada) in disponibilidad:
-                    vars[trabajador, puesto, jornada] = model.NewBoolVar(f'x_{trabajador}_{puesto}_{jornada}')
+                    var: IntVar = model.NewBoolVar(f'x_{trabajador}_{puesto}_{jornada}')
+                    vars[trabajador, puesto, jornada] = var
+
+                    # Se guarda la variable en ciertos diccionarios precomputados para mayor eficiencia.
+                    vars_por_trabajador[trabajador].append(var)
+                    vars_por_trabajador_y_jornada[trabajador, jornada].append(var)
+                    if jornada in jornadas_no_puede_doblar:
+                        vars_por_trabajador_en_no_puede_doblar[trabajador].append(var)
+                    # TODO poner esos dicts en las restricciones
+
 
     num_trabajadores_disponibles = len({trabajador for (trabajador, puesto, jornada) in vars})
 
     for trabajador in trabajadores:
         # Cada trabajador puede trabajar a lo sumo 2 jornadas, o 1 si no está en la lista de voluntarios para dobles.
         if trabajador in set_voluntarios_doble:
-            total_jornadas_trabajadas: int = sum(vars.get((trabajador, t, s), 0) for t in puestos for s in jornadas)
+            total_jornadas_trabajadas: int = sum(vars_por_trabajador[trabajador])
+            #sum(vars.get((trabajador, puesto, jornada), 0) for puesto in puestos for jornada in jornadas)
             model.Add(total_jornadas_trabajadas <= 2)
             for jornada in jornadas:
                 # Cada trabajador solo puede desempeñar un puesto en cada jornada, no se pueden dividir en dos.
-                model.Add(sum(vars.get((trabajador, puesto, jornada), 0) for puesto in puestos) <= 1)
+                model.Add(
+                    sum(vars_por_trabajador_y_jornada[trabajador, jornada])
+                    #sum(vars.get((trabajador, puesto, jornada), 0) for puesto in puestos)
+                    <= 1)
             # Se crea una variable nueva para representar si el trabajador en el que estamos actualmente iterando
             # realiza o no una jornada doble. Nótese que solo hacemos esto para los que son voluntarios para dobles.
             doble_jornada: IntVar = model.NewBoolVar(f'double_shift_{trabajador}')
@@ -97,7 +124,11 @@ def realizar_asignacion(
             model.Add(total_jornadas_trabajadas == 2).OnlyEnforceIf(doble_jornada)
             model.Add(total_jornadas_trabajadas != 2).OnlyEnforceIf(doble_jornada.Not())
             # Un trabajador que dobla jornadas solo puede hacerlo en las que está permitido (las de mañana y tarde)
-            model.Add(sum(vars.get((trabajador, puesto, jornada), 0) for puesto in puestos for jornada in jornadas_puede_doblar) == 0).OnlyEnforceIf(doble_jornada)
+            model.Add(
+                sum(vars_por_trabajador_en_no_puede_doblar[trabajador])
+                #sum(vars.get((trabajador, puesto, jornada), 0) for puesto in puestos for jornada in jornadas_no_puede_doblar)
+                == 0).OnlyEnforceIf(doble_jornada)
+            # TODO testear que los dobles se asignan solo a mañana y tarde
         else:
             # Si el trabajador no es voluntario para doble, solo podrá trabajar 1 jornada, sin más complicaciones.
             model.Add(sum(vars.get((trabajador, puesto, jornada), 0) for puesto in puestos for jornada in jornadas) <= 1)
@@ -105,7 +136,10 @@ def realizar_asignacion(
     # Cada jornada debe cubrir su demanda.
     for puesto in puestos:
         for jornada in jornadas:
-            model.Add(sum(vars.get((trabajador, puesto, jornada), 0) for trabajador in trabajadores) == demanda.get((puesto, jornada), 0))
+            model.Add(
+                sum(vars_por_puesto_y_jornada[puesto, jornada])
+                #sum(vars.get((trabajador, puesto, jornada), 0) for trabajador in trabajadores)
+                == demanda.get((puesto, jornada), 0))
 
     # Se define un diccionario indexado por tuplas (trabajador, puesto, jornada) que representa la puntuación por
     # asignar ese trabajador a ese puesto en esa jornada.
@@ -239,3 +273,71 @@ def realizar_asignacion(
         print('Ninguna solución factible encontrada')
 
     return resultado
+
+if __name__ == "__main__":
+
+    nivel_alto = NivelDesempeno(id=1, nombre_es="Alto")
+    nivel_medio = NivelDesempeno(id=2, nombre_es="Medio")
+    nivel_bajo = NivelDesempeno(id=3, nombre_es="Bajo")
+
+    puesto_a = PuestoTrabajo(id=1, nombre_es="A")
+    puesto_b = PuestoTrabajo(id=2, nombre_es="B")
+    puesto_c = PuestoTrabajo(id=3, nombre_es="C")
+    puestos = [puesto_a, puesto_b, puesto_c]
+
+    jornadas = [
+        Jornada.MANANA,
+        Jornada.TARDE,
+        Jornada.PARTIDA,
+        Jornada.NOCHE1,
+    ]
+
+    trabajadores = []
+    for i in range(20):
+        t = Trabajador(id=i + 1, nombre=f"Nombre{i + 1}", apellidos=f"Apellido{i + 1}")
+        if i % 3 == 0:
+            t.actualizar_capacidades(puesto_a, nivel_alto)
+        elif i % 3 == 1:
+            t.actualizar_capacidades(puesto_b, nivel_alto)
+        else:
+            t.actualizar_capacidades(puesto_c, nivel_medio)
+        trabajadores.append(t)
+
+    demanda = {
+        (puesto_a, Jornada.MANANA): 5,
+        (puesto_a, Jornada.TARDE): 5,
+        (puesto_b, Jornada.MANANA): 5,
+        (puesto_b, Jornada.TARDE): 5,
+        (puesto_c, Jornada.PARTIDA): 6,
+        (puesto_c, Jornada.NOCHE1): 6,
+    }
+
+    especialidades = defaultdict(list)
+    for t in trabajadores:
+        for puesto in t.capacidades:
+            especialidades[puesto].append(t)
+
+    voluntarios_noche = [t for t in trabajadores if puesto_c in t.capacidades]
+
+    disponibilidad = {(t, j) for t in trabajadores for j in jornadas}
+
+    voluntarios_doble = trabajadores[:10]
+
+    preferencia_manana = trabajadores
+    preferencia_tarde = trabajadores
+
+    realizar_asignacion(
+        trabajadores=trabajadores,
+        puestos=puestos,
+        jornadas=jornadas,
+        demanda=demanda,
+        especialidades=especialidades,
+        voluntarios_noche=voluntarios_noche,
+        disponibilidad=disponibilidad,
+        voluntarios_doble=voluntarios_doble,
+        preferencia_manana=preferencia_manana,
+        preferencia_tarde=preferencia_tarde,
+        verbose_estadisticas_avanzadas=True,
+        verbose_asignacion_trabajadores=True
+    )
+
