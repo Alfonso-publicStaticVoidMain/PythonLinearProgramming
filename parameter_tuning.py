@@ -106,7 +106,9 @@ def run_optimization(n_trials: int = 50) -> dict[str, Any]:
     print("Mejor pérdida: ", study.best_value)
     return study.best_params
 
-run_optimization()
+run_optimization(100)
 
 # Primer test:
 # {'capacidad_base': 82, 'capacidad_decaimiento': 7, 'maximo_bonus_especialidad': 30, 'bonus_maximo_jornada': 33, 'penalizacion_no_voluntario_noche': 19}
+# Mejor pérdida: 6810.0
+
