@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import Field
 from dataclasses import dataclass, field, is_dataclass, fields
 from datetime import date, datetime
 from typing import ClassVar, Type, TypeVar, Any, Iterable, get_type_hints
@@ -80,13 +81,38 @@ class Identificable:
     id: int
     _registros: ClassVar[dict[type, dict[int, Identificable]]] = defaultdict(dict)
 
+    @classmethod
+    def get_registro(cls: Type[T]) -> dict[int, T]:
+        """
+        Método de clase heredado por las clases que extiendan Identificable. Retorna el diccionario asignado a la propia
+        clase en el diccionario _registro de Identificable. Si no estaba presente, primero lo inicializa como un
+        diccionario vacío.
+        """
+        if cls not in cls._registros:
+            cls._registros[cls] = {}
+        return cls._registros[cls]
+
     def __post_init__(self: Identificable) -> None:
         """
         Añade automáticamente el objeto recién creado al registro si no estaba presente allí.
+        Si ya estaba presente, comprueba si todos sus atributos son iguales. En tal caso, permite la creación del
+        objeto, pero no lo intenta añadir al registro. Si algún atributo es distinto, lanza una excepción.
         """
         object.__setattr__(self, 'id', int(self.id))
         registro: dict[int, Identificable] = type(self).get_registro()
-        if self.id not in registro:
+        existente: Identificable = registro.get(self.id, None)
+        if existente is not None:
+            for field_ in fields(self): # type: Field
+                if field_.name.startswith('_'):
+                    continue
+                value_new: Any = getattr(self, field_.name)
+                value_existing: Any = getattr(existente, field_.name)
+                if value_new != value_existing:
+                    raise ValueError(
+                        f"Conflicto con ID duplicado en id={self.id} para la clase {type(self).__name__}: "
+                        f"El campo '{field_.name}' es distinto (existente={value_existing!r}, nuevo={value_new!r})"
+                    )
+        else:
             registro[self.id] = self
 
     def __eq__(self: Identificable, other: object) -> bool:
@@ -106,17 +132,6 @@ class Identificable:
         return format(str(self), format_spec)
 
     @classmethod
-    def get_registro(cls: Type[T]) -> dict[int, T]:
-        """
-        Método de clase heredado por las clases que extiendan Identificable. Retorna el diccionario asignado a la propia
-        clase en el diccionario _registro de Identificable. Si no estaba presente, primero lo inicializa como un
-        diccionario vacío.
-        """
-        if cls not in cls._registros:
-            cls._registros[cls] = {}
-        return cls._registros[cls]
-
-    @classmethod
     def from_id(cls: Type[T], id_: int | float | str) -> T | None:
         """
         Busca y retorna un objeto con el ID deseado, o None si no se encuentra.
@@ -126,10 +141,10 @@ class Identificable:
         """
         try:
             id_int = int(id_)
+            return cls.get_registro().get(id_int)
         except (ValueError, TypeError) as e:
             print(id_, "cannot be converted to an integer")
             print(e)
-        return cls.get_registro().get(id_int)
 
     @classmethod
     def get_or_create(cls: Type[T], data: dict[str, Any]) -> T | None:
@@ -144,7 +159,7 @@ class Identificable:
         """
         obj_id = data["id"]
         instance = cls.from_id(obj_id)
-        return instance if instance is not None else parse_data_into(cls, data)
+        return instance or parse_data_into(cls, data)
 
 
 @dataclass(eq=False, slots=True)
@@ -175,6 +190,34 @@ class Trabajador(Identificable):
 
     def __repr__(self: Trabajador) -> str:
         return f'Trabajador {self.id} - {self.nombre} {self.apellidos}'
+
+
+@dataclass(eq=False, slots=True)
+class PuestoTrabajo(Identificable):
+    nombre_es: str
+
+    def __post_init__(self: PuestoTrabajo) -> None:
+        super(PuestoTrabajo, self).__post_init__()
+
+    def __str__(self: PuestoTrabajo) -> str:
+        return f'id={self.id} {self.nombre_es}'
+
+    def __repr__(self: PuestoTrabajo) -> str:
+        return f'PuestoTrabajo(id={self.id} {self.nombre_es})'
+
+
+@dataclass(eq=False, slots=True)
+class NivelDesempeno(Identificable):
+    nombre_es: str
+
+    def __post_init__(self: NivelDesempeno) -> None:
+        super(NivelDesempeno, self).__post_init__()
+
+    def __str__(self: NivelDesempeno) -> str:
+        return f'{self.id}: {self.nombre_es}'
+
+    def __repr__(self: NivelDesempeno) -> str:
+        return f'NivelDesempeno({self.id}, {self.nombre_es})'
 
 
 @dataclass(eq=False, slots=True)
@@ -212,38 +255,13 @@ class TrabajadorPuestoTrabajo(Identificable):
         return self.nivel_desempeno.nombre_es
 
 
-@dataclass(eq=False, slots=True)
-class PuestoTrabajo(Identificable):
-    nombre_es: str
-
-    def __post_init__(self: PuestoTrabajo) -> None:
-        super(PuestoTrabajo, self).__post_init__()
-
-    def __str__(self: PuestoTrabajo) -> str:
-        return f'id={self.id} {self.nombre_es}'
-
-    def __repr__(self: PuestoTrabajo) -> str:
-        return f'PuestoTrabajo(id={self.id} {self.nombre_es})'
-
-
-@dataclass(eq=False, slots=True)
-class NivelDesempeno(Identificable):
-    nombre_es: str
-
-    def __post_init__(self: NivelDesempeno) -> None:
-        super(NivelDesempeno, self).__post_init__()
-
-    def __str__(self: NivelDesempeno) -> str:
-        return f'{self.id}: {self.nombre_es}'
-
-    def __repr__(self: NivelDesempeno) -> str:
-        return f'NivelDesempeno({self.id}, {self.nombre_es})'
-
-
 class TipoJornada(Enum):
     MANANA = (1, "Mañana")
     TARDE = (2, "Tarde")
     NOCHE = (3, "Noche")
+
+    id: int
+    nombre_es: str
 
     def __init__(self: TipoJornada, id: int, nombre_es: str) -> None:
         self.id = id
@@ -255,16 +273,14 @@ class TipoJornada(Enum):
     @classmethod
     def from_id(cls: Type[TipoJornada], id_: int) -> TipoJornada | None:
         try:
-            id_int = int(id_)
+            id_ = int(id_)
+            for tipo_jornada in TipoJornada:
+                if tipo_jornada.id == id_:
+                    return tipo_jornada
         except (ValueError, TypeError) as e:
             print(id_, "cannot be converted to an integer")
             print(e)
             return None
-
-        for tipo_jornada in cls:
-            if tipo_jornada.id == id_int:
-                return tipo_jornada
-        return None
 
 
 class Jornada(Enum):
@@ -284,18 +300,16 @@ class Jornada(Enum):
         return f"{self.nombre_es} ({self.tipo_jornada})"
 
     @classmethod
-    def from_id(cls: Type[Jornada], id_: int | float | str) -> Jornada | None:
+    def from_id(cls: Type[Jornada], id_: int) -> Jornada | None:
         try:
-            id_int = int(id_)
+            id_ = int(id_)
+            for jornada in Jornada:
+                if jornada.id == id_:
+                    return jornada
         except (ValueError, TypeError) as e:
             print(id_, "cannot be converted to an integer")
             print(e)
             return None
-
-        for jornada in cls:
-            if jornada.id == id_int:
-                return jornada
-        return None
 
 
 @dataclass(eq=False, slots=True)
