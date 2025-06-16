@@ -1,7 +1,7 @@
 from collections import defaultdict
 
 from ortools.sat.python import cp_model
-from ortools.sat.python.cp_model import CpModel, IntVar
+from ortools.sat.python.cp_model import CpModel, IntVar, LinearExpr
 
 from Clases import Trabajador, PuestoTrabajo, Jornada, NivelDesempeno, TipoJornada
 
@@ -103,21 +103,17 @@ def realizar_asignacion(
                     if puesto in trabajador.especialidades:
                         asignaciones_especialidades.append(var)
 
-    num_trabajadores_disponibles = len({trabajador for (trabajador, puesto, jornada) in vars})
-
+    num_trabajadores_disponibles: int = len({trabajador for (trabajador, puesto, jornada) in vars})
+    total_asignaciones_especialidades: LinearExpr = LinearExpr.sum(asignaciones_especialidades)
 
     for trabajador in trabajadores:
-        # Cada trabajador puede trabajar a lo sumo 2 jornadas, o 1 si no está en la lista_especialidades de voluntarios para dobles.
+        total_jornadas_trabajadas: LinearExpr = LinearExpr.sum(vars_por_trabajador[trabajador])
         if trabajador in set_voluntarios_doble:
-            total_jornadas_trabajadas: int = sum(vars_por_trabajador[trabajador])
-            #sum(vars.get((trabajador, puesto, jornada), 0) for puesto in puestos for jornada in jornadas)
+            # Cada trabajador puede trabajar a lo sumo 2 jornadas, o 1 si no está en la lista_especialidades de voluntarios para dobles.
             model.Add(total_jornadas_trabajadas <= 2)
             for jornada in jornadas:
                 # Cada trabajador solo puede desempeñar un puesto en cada jornada, no se pueden dividir en dos.
-                model.Add(
-                    sum(vars_por_trabajador_y_jornada[trabajador, jornada]) <= 1
-                    #sum(vars.get((trabajador, puesto, jornada), 0) for puesto in puestos) <= 1
-                )
+                model.Add(LinearExpr.sum(vars_por_trabajador_y_jornada[trabajador, jornada]) <= 1)
             # Se crea una variable nueva para representar si el trabajador en el que estamos actualmente iterando
             # realiza o no una jornada doble. Nótese que solo hacemos esto para los que son voluntarios para dobles.
             doble_jornada: IntVar = model.NewBoolVar(f'double_shift_{trabajador}')
@@ -125,24 +121,15 @@ def realizar_asignacion(
             model.Add(total_jornadas_trabajadas == 2).OnlyEnforceIf(doble_jornada)
             model.Add(total_jornadas_trabajadas != 2).OnlyEnforceIf(doble_jornada.Not())
             # Un trabajador que dobla jornadas solo puede hacerlo en las que está permitido (las de mañana y tarde)
-            model.Add(
-                sum(vars_trabajador_no_doblar[trabajador]) == 0
-                #sum(vars.get((trabajador, puesto, jornada), 0) for puesto in puestos for jornada in jornadas_no_puede_doblar) == 0
-            ).OnlyEnforceIf(doble_jornada)
+            model.Add(LinearExpr.sum(vars_trabajador_no_doblar[trabajador]) == 0).OnlyEnforceIf(doble_jornada)
         else:
             # Si el trabajador no es voluntario para doble, solo podrá trabajar 1 jornada, sin más complicaciones.
-            model.Add(
-                sum(vars_por_trabajador[trabajador]) <= 1
-                #sum(vars.get((trabajador, puesto, jornada), 0) for puesto in puestos for jornada in jornadas) <= 1
-            )
+            model.Add(total_jornadas_trabajadas <= 1)
 
     # Cada jornada debe cubrir su demanda.
     for puesto in puestos:
         for jornada in jornadas:
-            model.Add(
-                sum(vars_por_puesto_y_jornada[puesto, jornada]) == demanda.get((puesto, jornada), 0)
-                #sum(vars.get((trabajador, puesto, jornada), 0) for trabajador in trabajadores) == demanda.get((puesto, jornada), 0)
-            )
+            model.Add(LinearExpr.sum(vars_por_puesto_y_jornada[puesto, jornada]) == demanda.get((puesto, jornada), 0))
 
     # Se precomputan diccionarios mapeando cada trabajador a su posición en la lista_especialidades de voluntarios de noche, preferencia
     # de mañana y tarde y en cada lista_especialidades de especialidades, para mayor eficiencia posteriormente.
@@ -188,8 +175,13 @@ def realizar_asignacion(
 
         puntuaciones[trabajador, puesto, jornada] = puntuacion_capacidad + puntuacion_especialidad + puntuacion_jornada
 
+    puntuacion_total: LinearExpr = LinearExpr.sum([
+        puntuaciones[trabajador, puesto, jornada] * vars[trabajador, puesto, jornada]
+        for (trabajador, puesto, jornada) in vars
+    ])
+
     # En el primer paso del modelo se busca maximizar el número de asignaciones a especialidades.
-    model.Maximize(sum(asignaciones_especialidades))
+    model.Maximize(total_asignaciones_especialidades)
 
     solver = cp_model.CpSolver()
     solver.parameters.num_search_workers = 8
@@ -208,12 +200,12 @@ def realizar_asignacion(
 
     # Encontrado el número máximo de asignaciones de especialidades, se añade una nueva restricción al modelo de que
     # la solución que aceptemos tenga ese número de asignaciones a especialidades, y no nos conformemos con menos.
-    model.Add(sum(asignaciones_especialidades) == int(solver.ObjectiveValue()))
+    model.Add(total_asignaciones_especialidades == int(solver.ObjectiveValue()))
 
     # Cambiamos ahora la función a maximizar por la suma total de puntuaciones recibidas por las asignaciones realizadas.
     # De esta forma escogemos de entre las soluciones con máximas asignaciones a especialidades la que maximice también
     # nuestra puntuación.
-    model.Maximize(sum(puntuaciones[trabajador, puesto, jornada] * vars[trabajador, puesto, jornada] for (trabajador, puesto, jornada) in vars))
+    model.Maximize(puntuacion_total)
 
     solver2 = cp_model.CpSolver()
     solver2.parameters.num_search_workers = 8
