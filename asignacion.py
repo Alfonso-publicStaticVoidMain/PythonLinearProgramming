@@ -66,9 +66,10 @@ def realizar_asignacion(
     set_voluntarios_doble: set[Trabajador] = set(voluntarios_doble)
     set_preferencia_manana: set[Trabajador] = set(preferencia_manana)
     set_preferencia_tarde: set[Trabajador] = set(preferencia_tarde)
-    sets_especialidades: dict[PuestoTrabajo, set[Trabajador]] = {}
-    for puesto, lista_trabajadores in especialidades.items():
-        sets_especialidades[puesto] = set(lista_trabajadores)
+    sets_especialidades: dict[PuestoTrabajo, set[Trabajador]] = {
+        puesto : set(lista_trabajadores)
+        for puesto, lista_trabajadores in especialidades.items()
+    }
 
     # Se guardan las variables en un diccionario indexado por tuplas (trabajador, puesto, jornada)
     vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar] = {}
@@ -258,7 +259,7 @@ def realizar_asignacion(
             puestos_demandados: int = sum(demanda.get((puesto, jornada), 0) for puesto in puestos for jornada in jornadas)
             print(f'Número de asignaciones de especialidad alcanzado: {int(solver.ObjectiveValue())} de {puestos_demandados} ({100*solver.ObjectiveValue()/puestos_demandados:.2f}%)')
             print(f'Número de trabajadores asignados: {trabajadores_asignados} de {num_trabajadores_disponibles} ({100 * float(trabajadores_asignados) /num_trabajadores_disponibles:.2f}%)')
-            print(f'Puntuación alcanzada: {solver2.ObjectiveValue()}\n')
+            print(f'Puntuación alcanzada: {int(solver2.ObjectiveValue())}\n')
 
         if verbose_asignacion_trabajadores:
             for (trabajador, puesto, jornada) in resultado:

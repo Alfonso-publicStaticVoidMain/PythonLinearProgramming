@@ -155,6 +155,6 @@ if __name__ == "__main__":
         *parse_all_data(),
         verbose_estadisticas_avanzadas=True,
         verbose_general=True,
-        verbose_asignacion_trabajadores=False,
-        verbose_asignacion_puestos=False
+        verbose_asignacion_trabajadores=True,
+        verbose_asignacion_puestos=True
     )

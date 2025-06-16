@@ -12,7 +12,7 @@ T = TypeVar("T", bound="Identifiable")
 
 def parse_data_into(cls: Type[T], data: dict[str, Any]) -> T:
     """
-    Parsea un diccionario conteniendo en los campos de una clase cuyo nombre coincida completamente con las llaves del
+    Parsea un diccionario conteniendo en los campos de una clase cuyo nombre coincida exactamente con las llaves del
     diccionario. Si la clase posee atributos adicionales, estos quedarán sin asignar, y si los datos poseen llaves que
     no aparecen en los atributos, esos datos no se asignarán. Los datos cuyo nombre coincida con una anotación de tipo
     de los atributos de cls serán recursivamente parseados en ese atributo.
@@ -27,9 +27,7 @@ def parse_data_into(cls: Type[T], data: dict[str, Any]) -> T:
         raise ValueError(f"{cls.__name__} is not a dataclass")
 
     type_hints: dict[str, Any] = get_type_hints(cls)
-    #field_names: set[str] = {f.name for f in fields(cls)}
     field_types: dict[str, Any] = {field.name: type_hints[field.name] for field in fields(cls)}
-    #filtered_data = {k : v for k, v in data.items() if k in field_names}
     filtered_data: dict[str, Any] = {}
     for k, v in data.items():
         if k in field_types:
@@ -57,7 +55,8 @@ def get_by_id(collection: Iterable[T], cls: Type[T], id_: int | str | float, fal
     Si no lo encuentra, retorna fallback.
     """
     candidate: T = cls.from_id(id_)
-    if candidate in collection: return candidate
+    if candidate in collection:
+        return candidate
     else:
         for item in collection:
             if item.id == id_:
@@ -73,7 +72,7 @@ def parse_bool(value: str | int) -> bool:
 @dataclass(eq=False, slots=True)
 class Identificable:
     """
-    Clare que actúa como superclase para todas las clases que se quiera que hereden un atributo id: int que las
+    Clase que actúa como superclase para todas las clases que se quiera que hereden un atributo id: int que las
     identifique de forma única. Posee también un atributo de clase _registros, un diccionario que mapea cada tipo de
     clase (que se espera que sea solamente de las que extiendan Identificable) a un diccionario que mapea cada posible
     id: int al objeto que tiene ese ID.
@@ -118,17 +117,17 @@ class Identificable:
         return cls._registros[cls]
 
     @classmethod
-    def from_id(cls: Type[T], obj_id: int | float | str) -> T | None:
+    def from_id(cls: Type[T], id_: int | float | str) -> T | None:
         """
         Busca y retorna un objeto con el ID deseado, o None si no se encuentra.
-        :param obj_id: ID del objeto a buscar.
+        :param id_: ID del objeto a buscar.
         :return: El objeto guardado en el registro cuyo ID sea el mismo que el recibido como argumento, o None si
         no se encuentra tal objeto.
         """
         try:
-            id_int = int(obj_id)
+            id_int = int(id_)
         except (ValueError, TypeError) as e:
-            print(obj_id, "cannot be converted to an integer")
+            print(id_, "cannot be converted to an integer")
             print(e)
         return cls.get_registro().get(id_int)
 
@@ -159,9 +158,17 @@ class Trabajador(Identificable):
         super(Trabajador, self).__post_init__()
 
     def actualizar_capacidades(self: Trabajador, puesto: PuestoTrabajo, nivel: NivelDesempeno) -> None:
+        """
+        Actualiza el diccionario de capacidades del trabajador para reflejar el nivel de desempeño que tiene en el
+        puesto, sustituyendo un valor previo si lo había. Si se añade un nivel de desempeño con ID 1, se añade el
+        puesto al conjunto de especialidades, y si ya estaba en ese conjunto y se le sustituye su nivel de desempeño
+        por uno que no sea el de especialidad, entonces se elimina del conjunto de especialidades.
+        """
         self.capacidades[puesto] = nivel
         if nivel.id == 1 and puesto not in self.especialidades:
             self.especialidades.add(puesto)
+        if nivel.id != 1 and puesto in self.especialidades:
+            self.especialidades.remove(puesto)
 
     def __str__(self: Trabajador) -> str:
         return f'{self.id}'
@@ -247,8 +254,15 @@ class TipoJornada(Enum):
 
     @classmethod
     def from_id(cls: Type[TipoJornada], id_: int) -> TipoJornada | None:
+        try:
+            id_int = int(id_)
+        except (ValueError, TypeError) as e:
+            print(id_, "cannot be converted to an integer")
+            print(e)
+            return None
+
         for tipo_jornada in cls:
-            if tipo_jornada.id == id_:
+            if tipo_jornada.id == id_int:
                 return tipo_jornada
         return None
 
@@ -270,9 +284,16 @@ class Jornada(Enum):
         return f"{self.nombre_es} ({self.tipo_jornada})"
 
     @classmethod
-    def from_id(cls: Type[Jornada], id_: int) -> Jornada | None:
+    def from_id(cls: Type[Jornada], id_: int | float | str) -> Jornada | None:
+        try:
+            id_int = int(id_)
+        except (ValueError, TypeError) as e:
+            print(id_, "cannot be converted to an integer")
+            print(e)
+            return None
+
         for jornada in cls:
-            if jornada.id == id_:
+            if jornada.id == id_int:
                 return jornada
         return None
 
