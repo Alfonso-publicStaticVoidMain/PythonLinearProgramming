@@ -7,6 +7,7 @@
     <list default="true" id="fd6ce6cc-75c1-496c-99dd-c1aee2ad9ff6" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Clases.py" beforeDir="false" afterPath="$PROJECT_DIR$/Clases.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/parameter_tuning.py" beforeDir="false" afterPath="$PROJECT_DIR$/parameter_tuning.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

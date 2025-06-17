@@ -153,7 +153,7 @@ class Identificable:
             print(e)
 
     @classmethod
-    def get_or_create(cls: Type[T], data: dict[str, Any]) -> T | None:
+    def get_or_create(cls: Type[T], data: dict[str, Any]) -> T:
         """
         Crea un nuevo objeto obteniendo los datos de un diccionario recibido como argumento, o si un objeto con ese
         ID ya existía, retorna ese objeto.
@@ -276,7 +276,7 @@ class TipoJornada(Enum):
         return self.nombre_es
 
     @classmethod
-    def from_id(cls: Type[TipoJornada], id_: int) -> TipoJornada | None:
+    def from_id(cls: Type[TipoJornada], id_: int | str) -> TipoJornada | None:
         try:
             id_ = int(id_)
             for tipo_jornada in TipoJornada:
@@ -305,7 +305,7 @@ class Jornada(Enum):
         return f"{self.nombre_es} ({self.tipo_jornada})"
 
     @classmethod
-    def from_id(cls: Type[Jornada], id_: int) -> Jornada | None:
+    def from_id(cls: Type[Jornada], id_: int | str) -> Jornada | None:
         try:
             id_ = int(id_)
             for jornada in Jornada:
