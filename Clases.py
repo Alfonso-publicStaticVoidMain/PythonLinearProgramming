@@ -46,6 +46,7 @@ def parse_data_into(cls: Type[T], data: dict[str, Any]) -> T:
 
     return cls(**filtered_data)
 
+
 def get_by_id(collection: Iterable[T], cls: Type[T], id_: int | str | float, fallback: T | None = None) -> T | None:
     """
     Busca en un iterable de tipo T (que extienda Identificable) el único objeto con un cierto ID.
@@ -162,9 +163,7 @@ class Identificable:
         coincidan con los nombres de los atributos de la clase y llama al constructor con esos valores, retornando
         el objeto construído de esta forma.
         """
-        obj_id = data["id"]
-        instance = cls.from_id(obj_id)
-        return instance or parse_data_into(cls, data)
+        return cls.from_id(data["id"]) or parse_data_into(cls, data)
 
 
 @dataclass(eq=False, slots=True)
