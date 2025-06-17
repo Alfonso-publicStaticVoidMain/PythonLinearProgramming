@@ -54,7 +54,7 @@ def realizar_asignacion(
     maximo_bonus_especialidad: int = 50,
     bonus_maximo_jornada: int = 20,
     penalizacion_no_voluntario_noche: int = 50,
-) -> dict[tuple[Trabajador, PuestoTrabajo, Jornada], bool]:
+) -> set[tuple[Trabajador, PuestoTrabajo, Jornada]]:
 
     model: CpModel = cp_model.CpModel()
     #jornadas_puede_doblar: set[Jornada] = {jornada for jornada in jornadas if jornada.puede_doblar}
@@ -218,21 +218,18 @@ def realizar_asignacion(
         print(f"Conflictos: {solver2.NumConflicts()}")
         print(f"Ramas: {solver2.NumBranches()}\n")
 
-    resultado: dict[tuple[Trabajador, PuestoTrabajo, Jornada], bool] = {}
+    resultado: set[tuple[Trabajador, PuestoTrabajo, Jornada]] = set()
     if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-        # Guardar en un diccionario los resultados, mapeando las tuplas a True si se decide realizar la asignación, y
-        # False en otro caso o si la variable asociada a esa tupla no fue considerada como asignación válida.
+        # Guardar en un conjunto de tuplas el resultado, representado las asignaciones que finalmerte son realizadas.
         resultado = {
-            (trabajador, puesto, jornada) : ((trabajador, puesto, jornada) in vars and solver2.Value(vars[trabajador, puesto, jornada]) == 1)
-            for trabajador in trabajadores
-            for puesto in puestos
-            for jornada in jornadas
+            (trabajador, puesto, jornada)
+            for (trabajador, puesto, jornada) in vars
+            if solver2.Value(vars[trabajador, puesto, jornada]) == 1
         }
 
         numero_asignaciones_por_trabajador: dict[Trabajador, int] = defaultdict(int)
-        for (trabajador, _, _), asignado in resultado.items():
-            if asignado:
-                numero_asignaciones_por_trabajador[trabajador] += 1
+        for trabajador, _, _ in resultado:
+            numero_asignaciones_por_trabajador[trabajador] += 1
 
         trabajadores_asignados_dobles: set[Trabajador] = {
             trabajador
@@ -241,43 +238,42 @@ def realizar_asignacion(
             #sum(resultado[trabajador, puesto, jornada] for puesto in puestos for jornada in jornadas) == 2
         }
 
+        trabajadores_asignados: int = len({trabajador for trabajador, _, _ in resultado})
+
         if verbose_general:
             if status == cp_model.OPTIMAL:
                 print('Solución óptima encontrada.')
             else:
                 print('Solución factible encontrada. No se puede garantizar que sea óptima.')
 
-            trabajadores_asignados: int = len({trabajador for (trabajador, puesto, jornada), val in resultado.items() if val})
             puestos_demandados: int = sum(demanda.get((puesto, jornada), 0) for puesto in puestos for jornada in jornadas)
             print(f'Número de asignaciones de especialidad alcanzado: {int(solver.ObjectiveValue())} de {puestos_demandados} ({100*solver.ObjectiveValue()/puestos_demandados:.2f}%)')
             print(f'Número de trabajadores asignados: {trabajadores_asignados} de {num_trabajadores_disponibles} ({100 * float(trabajadores_asignados) /num_trabajadores_disponibles:.2f}%)')
             print(f'Puntuación alcanzada: {int(solver2.ObjectiveValue())}\n')
 
         if verbose_asignacion_trabajadores:
-            for (trabajador, puesto, jornada) in resultado:
-                if resultado[trabajador, puesto, jornada]:
-                    double = 'DOBLE' if trabajador in trabajadores_asignados_dobles else ''
-                    poly = trabajador.capacidades[puesto].nombre_es
-                    print(
-                        f"Trabajador {trabajador:<{3}} -> "
-                        f"{puesto.nombre_es:<{21}} | "
-                        f"{jornada.nombre_es:<{10}} "
-                        f"{double:<{10}}{poly:<{25}}"
-                    )
+            for trabajador, puesto, jornada in resultado:
+                double = 'DOBLE' if trabajador in trabajadores_asignados_dobles else ''
+                poly = trabajador.capacidades[puesto].nombre_es
+                print(
+                    f"Trabajador {trabajador:<{3}} -> "
+                    f"{puesto.nombre_es:<{21}} | "
+                    f"{jornada.nombre_es:<{10}} "
+                    f"{double:<{10}}{poly:<{25}}"
+                )
 
         if verbose_asignacion_puestos:
             for jornada in jornadas:
                 print(f'{jornada.nombre_es.capitalize()}:')
                 for puesto in puestos:
                     trabajadores_demandados = demanda.get((puesto, jornada), 0)
-                    trabajadores_asignados = sum(resultado.get((trabajador, puesto, jornada), 0) for trabajador in trabajadores)
                     if trabajadores_demandados != trabajadores_asignados:
                         print('**********************************************')
                         print(f'{puesto} en jornada {jornada}: MISMATCH!!!!')
                         print('**********************************************')
                     print(f'{puesto.nombre_es} (demanda: {trabajadores_demandados}) asignado a {trabajadores_asignados} trabajadores:')
                     for trabajador in trabajadores:
-                        if resultado[trabajador, puesto, jornada]:
+                        if (trabajador, puesto, jornada) in resultado:
                             print(f'\tTrabajador {trabajador:<3}', f'\t{trabajador.capacidades[puesto].nombre_es}')
 
     elif verbose_estadisticas_avanzadas:

@@ -9,7 +9,7 @@ from parse import parse_all_data
 
 
 def compute_loss(
-    asignacion: dict[tuple[Trabajador, PuestoTrabajo, Jornada], bool],
+    asignacion: set[tuple[Trabajador, PuestoTrabajo, Jornada]],
     trabajadores: list[Trabajador],
     jornadas: list[Jornada],
     especialidades: dict[PuestoTrabajo, list[Trabajador]],
@@ -28,16 +28,15 @@ def compute_loss(
     preferencia_manana_tarde_no_respetadas: int = 0
     especialidad_no_asignada: int = 0
 
-    for (trabajador, puesto, jornada), valor in asignacion.items():
-        if valor:
-            if puesto not in trabajador.especialidades:
-                especialidad_no_asignada+=1
-            if trabajador not in voluntarios_noche and jornada.tipo_jornada == TipoJornada.NOCHE:
-                no_voluntario_noche_asignados+=1
-            if trabajador in preferencia_manana and jornada.tipo_jornada != TipoJornada.MANANA:
-                preferencia_manana_tarde_no_respetadas+=1
-            if trabajador in preferencia_tarde and jornada.tipo_jornada != TipoJornada.TARDE:
-                preferencia_manana_tarde_no_respetadas+=1
+    for trabajador, puesto, jornada in asignacion:
+        if puesto not in trabajador.especialidades:
+            especialidad_no_asignada+=1
+        if trabajador not in voluntarios_noche and jornada.tipo_jornada == TipoJornada.NOCHE:
+            no_voluntario_noche_asignados+=1
+        if trabajador in preferencia_manana and jornada.tipo_jornada != TipoJornada.MANANA:
+            preferencia_manana_tarde_no_respetadas+=1
+        if trabajador in preferencia_tarde and jornada.tipo_jornada != TipoJornada.TARDE:
+            preferencia_manana_tarde_no_respetadas+=1
 
     return {
         "no_voluntario_noche_asignados": no_voluntario_noche_asignados,
