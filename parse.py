@@ -8,9 +8,9 @@ from asignacion import realizar_asignacion
 
 T = TypeVar('T')
 get_id = lambda p : p.id
+get_codigo = lambda t : t.codigo
 
-
-def load_json_file(path: str) -> Any:
+def load_json_file(path: str) -> dict[str, Any] | None:
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -30,12 +30,10 @@ eventos_data: dict[str, Any] = load_json_file("../data/eventos_trabajadores.json
 jornadas_data: dict[str, Any] = load_json_file("../data/jornadas.json")
 concesiones_data: dict[str, Any] = load_json_file("../data/concesiones.json")
 grupos_data: dict[str, Any] = load_json_file("../data/trabajadores_grupos_personales.json")
+contratos_data: dict[str, Any] = load_json_file("../data/contratos.json")
 
 
-def parse_trabajadores_puestos() -> tuple[
-    dict[tuple[Trabajador, PuestoTrabajo], NivelDesempeno],
-    dict[PuestoTrabajo, list[Trabajador]]
-]:
+def parse_trabajadores_puestos() -> dict[PuestoTrabajo, list[Trabajador]]:
     # Se van a devolver un diccionario indexado por tuplas (trabajador, puesto), mapeándolas a un objeto NivelDesempeno,
     # que representa la eficacia del trabajador en ese puesto, siendo un ID de 1 su especialidad principal, y un
     # diccionario indexado por PuestoTrabajo que mapea a una lista de los trabajadores que tienen esa especialidad.
@@ -44,13 +42,15 @@ def parse_trabajadores_puestos() -> tuple[
         # Se parsea la información del JSON en un objeto de Trabajador, PuestoTrabajo y NivelDesempeno
         trabajador: Trabajador = Trabajador.get_or_create(entry["Trabajador"])
         puesto: PuestoTrabajo = PuestoTrabajo.get_or_create(entry["PuestoTrabajo"])
-        nivel: NivelDesempeno = parse_data_into(NivelDesempeno, entry["NivelDesempeno"])
+        nivel: NivelDesempeno = NivelDesempeno.get_or_create(entry["NivelDesempeno"])
         # Se modifica el atributo capacidades del trabajador para reflejar su eficacia en el puesto de trabajo, y
         # a continuación también se modifica el diccionario global a retornar que engloba a todos los trabajadores.
         trabajador.actualizar_capacidades(puesto, nivel)
         # Si el ID del NivelDesempeno es 1, es una especialidad, así que se actualizan las listas apropiadas.
         if nivel.id == 1:
             dict_especialidades[puesto].append(trabajador)
+    for lista_especialidades in dict_especialidades.values():
+        lista_especialidades.sort(key = get_codigo)
     return dict_especialidades
 
 
@@ -66,15 +66,6 @@ def parse_demandas() -> dict[tuple[PuestoTrabajo, Jornada], int]:
                 else:
                     demandas[puesto, jornada] = int(demanda_puestos["num_trabajadores"])
     return demandas
-
-
-def parse_jornadas() -> list[Jornada]:
-    lista_jornadas: list[Jornada] = []
-    for entry in jornadas_data['rows']:
-        if entry['id'] != 6:
-            jornada = Jornada.from_id(entry['id'])
-            lista_jornadas.append(jornada)
-    return lista_jornadas
 
 
 def parse_excepciones() -> set[tuple[Trabajador, Jornada]]:
@@ -111,6 +102,8 @@ def parse_concesiones() -> tuple[
                 lista_voluntarios_noche.append(trabajador)
             if entry["TipoConcesion"]["nombre_es"] == "Voluntario Doble":
                 lista_voluntarios_doble.append(trabajador)
+    lista_voluntarios_doble.sort(key=get_codigo)
+    lista_voluntarios_noche.sort(key=get_codigo)
     return lista_voluntarios_doble, lista_voluntarios_noche
 
 
@@ -119,10 +112,19 @@ def parse_grupo1_2():
     grupo2: list[Trabajador] = []
     for entry in grupos_data:
         if entry["GrupoPersonal"]["nombre_es"] == "Grupo1":
-            grupo1.append(parse_data_into(Trabajador, entry["Trabajador"]))
+            grupo1.append(Trabajador.get_or_create(entry["Trabajador"]))
         elif entry["GrupoPersonal"]["nombre_es"] == "Grupo2":
-            grupo2.append(parse_data_into(Trabajador, entry["Trabajador"]))
+            grupo2.append(Trabajador.get_or_create(entry["Trabajador"]))
+    grupo1.sort(key=get_codigo)
+    grupo2.sort(key=get_codigo)
     return grupo1, grupo2
+
+
+def parse_contratos():
+    lista_trabajadores: list[Trabajador] = []
+    for entry in contratos_data:
+        lista_trabajadores.append(Trabajador.from_id(entry["TrabajadorContrato"]["trabajador_id"]))
+    return lista_trabajadores
 
 
 def parse_all_data():
@@ -134,7 +136,7 @@ def parse_all_data():
     # ejecutarse después, o lo encontrarán vacío.
     especialidades = parse_trabajadores_puestos()
     # Deben estar después de parse_trabajadores_puestos
-    trabajadores = list(Trabajador.get_registro().values())
+    trabajadores = parse_contratos() # list(Trabajador.get_registro().values())
     puestos = list(PuestoTrabajo.get_registro().values())
     jornadas = list(Jornada)
     # parse_demandas accede al registro de PuestoTrabajo
@@ -155,6 +157,6 @@ if __name__ == "__main__":
         *parse_all_data(),
         verbose_estadisticas_avanzadas=True,
         verbose_general=True,
-        verbose_asignacion_trabajadores=True,
-        verbose_asignacion_puestos=True
+        verbose_asignacion_trabajadores=False,
+        verbose_asignacion_puestos=False
     )

@@ -59,10 +59,10 @@ def compute_loss(
                 if t not in trabajadores_con_especialidad:
                     especialista_sin_prioridad += 1
 
-    return (10 * no_voluntario_noche_asignados +
-        6 * preferencia_manana_tarde_no_respetadas +
-        6 * especialidad_no_asignada +
-        8 * especialista_sin_prioridad)
+    return (no_voluntario_noche_asignados +
+        preferencia_manana_tarde_no_respetadas +
+        especialidad_no_asignada +
+        especialista_sin_prioridad)
 
 
 def objective(trial) -> int:
@@ -110,6 +110,6 @@ def run_optimization(n_trials: int = 50) -> dict[str, Any]:
 run_optimization()
 
 # Primer test:
-# {'capacidad_base': 82, 'capacidad_decaimiento': 7, 'maximo_bonus_especialidad': 30, 'bonus_maximo_jornada': 33, 'penalizacion_no_voluntario_noche': 19}
-# Mejor pérdida: 6810.0
+# Mejores parámetros:  {'capacidad_base': 93, 'capacidad_decaimiento': 5, 'maximo_bonus_especialidad': 35, 'bonus_maximo_jornada': 15, 'penalizacion_no_voluntario_noche': 25}
+# Mejor pérdida:  1099.0
 

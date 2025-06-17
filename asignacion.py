@@ -1,7 +1,7 @@
 from collections import defaultdict
 
 from ortools.sat.python import cp_model
-from ortools.sat.python.cp_model import CpModel, IntVar, LinearExpr
+from ortools.sat.python.cp_model import CpModel, IntVar, LinearExpr, CpSolver
 
 from Clases import Trabajador, PuestoTrabajo, Jornada, NivelDesempeno, TipoJornada
 
@@ -180,10 +180,10 @@ def realizar_asignacion(
         for (trabajador, puesto, jornada) in vars
     ])
 
-    # En el primer paso del modelo se busca maximizar el número de asignaciones a especialidades.
+    # En el primer paso se busca maximizar el número de asignaciones a especialidades.
     model.Maximize(total_asignaciones_especialidades)
 
-    solver = cp_model.CpSolver()
+    solver: CpSolver = cp_model.CpSolver()
     solver.parameters.num_search_workers = 8
     solver.parameters.search_branching = cp_model.FIXED_SEARCH
     status = solver.Solve(model)
@@ -207,7 +207,7 @@ def realizar_asignacion(
     # nuestra puntuación.
     model.Maximize(puntuacion_total)
 
-    solver2 = cp_model.CpSolver()
+    solver2: CpSolver = cp_model.CpSolver()
     solver2.parameters.num_search_workers = 8
     solver2.parameters.search_branching = cp_model.FIXED_SEARCH
     status = solver2.solve(model)

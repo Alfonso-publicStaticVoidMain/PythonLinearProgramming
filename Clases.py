@@ -13,10 +13,15 @@ T = TypeVar("T", bound="Identifiable")
 
 def parse_data_into(cls: Type[T], data: dict[str, Any]) -> T:
     """
-    Parsea un diccionario conteniendo en los campos de una clase cuyo nombre coincida exactamente con las llaves del
-    diccionario. Si la clase posee atributos adicionales, estos quedarán sin asignar, y si los datos poseen llaves que
-    no aparecen en los atributos, esos datos no se asignarán. Los datos cuyo nombre coincida con una anotación de tipo
-    de los atributos de cls serán recursivamente parseados en ese atributo.
+    Parsea el contenido de un diccionario en una clase, asignándole a sus atributos los valores de las llaves del
+    diccionario cuyo nombre coincida exactamente con el nombre del atributo.
+
+    Si la clase posee atributos adicionales, estos quedarán sin asignar, y si los datos poseen llaves que
+    no aparecen en los atributos, esos datos no se asignarán a nada.
+
+    Las llaves cuyo nombre coincida con una anotación de tipo de los atributos de la clase serán recursivamente parseados
+    en ese atributo.
+
     :param cls: Clase de la que crear el objeto.
     :param data: Diccionario conteniendo los valores de los atributos.
     :return: Un objeto de la clase cls cuyos atributos toman como valor los valores de las llaves del diccionario que
@@ -166,6 +171,7 @@ class Identificable:
 class Trabajador(Identificable):
     nombre: str
     apellidos: str
+    codigo: int
     especialidades: set[PuestoTrabajo] = field(default_factory=set)
     capacidades: dict[PuestoTrabajo, NivelDesempeno] = field(default_factory=dict)
 
@@ -186,7 +192,7 @@ class Trabajador(Identificable):
             self.especialidades.remove(puesto)
 
     def __str__(self: Trabajador) -> str:
-        return f'{self.id}'
+        return f'{self.codigo}'
 
     def __repr__(self: Trabajador) -> str:
         return f'Trabajador {self.id} - {self.nombre} {self.apellidos}'
@@ -327,8 +333,7 @@ class Demanda(Identificable):
 
     def __post_init__(self: Demanda) -> None:
         if isinstance(self.fecha, str):
-            parsed_date = datetime.strptime(self.fecha, "%Y-%m-%d").date()
-            object.__setattr__(self, 'fecha', parsed_date)
+            object.__setattr__(self, 'fecha', datetime.strptime(self.fecha, "%Y-%m-%d").date())
         object.__setattr__(self, 'jornada_id', int(self.jornada_id))
         object.__setattr__(self, 'jornada', Jornada.from_id(self.jornada_id))
         object.__setattr__(self, 'escala_id', int(self.escala_id))
@@ -357,6 +362,29 @@ class DemandasPuestosTrabajos(Identificable):
         if self not in puestos_demandados: puestos_demandados.add(self)
         super(DemandasPuestosTrabajos, self).__post_init__()
 
+class Contrato(Identificable):
+    nombre_es: int
+
+    def __post_init__(self: Contrato) -> None:
+        super(Contrato, self).__post_init__()
+
+class TrabajadorContrato(Identificable):
+    trabajador_id: int
+    trabajador: Trabajador
+    contrato_id: int
+    contrato: Contrato
+    fecha_ini: date
+    fecha_fin: date
+
+    def __post_init__(self: TrabajadorContrato) -> None:
+        object.__setattr__(self, 'trabajador_id', int(self.trabajador_id))
+        object.__setattr__(self, 'contrato_id', int(self.contrato_id))
+        object.__setattr__(self, 'trabajador', Trabajador.from_id(self.trabajador_id))
+        if isinstance(self.fecha_ini, str):
+            object.__setattr__(self, 'fecha_ini', datetime.strptime(self.fecha_ini, "%Y-%m-%d").date())
+        if isinstance(self.fecha_fin, str):
+            object.__setattr__(self, 'fecha_fin', datetime.strptime(self.fecha_fin, "%Y-%m-%d").date())
+        super(TrabajadorContrato, self).__post_init__()
 
 def test_trabajador_registry():
     print("Creating Trabajadores manually:")
