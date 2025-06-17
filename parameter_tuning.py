@@ -9,60 +9,40 @@ from parse import parse_all_data
 
 
 def compute_loss(
-    asignacion: dict[tuple[Trabajador, PuestoTrabajo, Jornada], bool],
+    asignacion: set[tuple[Trabajador, PuestoTrabajo, Jornada]],
     trabajadores: list[Trabajador],
     jornadas: list[Jornada],
     especialidades: dict[PuestoTrabajo, list[Trabajador]],
     voluntarios_noche: list[Trabajador],
     preferencia_manana: list[Trabajador],
     preferencia_tarde: list[Trabajador]
-):
+) -> dict[str, int]:
+    """
+    Función que calcula una puntuación 'negativa' midiendo el número de veces que ocurrieron los siguientes sucesos:
+        Se asignó un trabajador que no era voluntario a un turno de noche.
+        No se respetó la preferencia de mañana o de tarde de un trabajador (se le asignó a otro tipo de jornada)
+        No se asignó a un trabajador a su especialidad.
+        No se asignó a un trabajador a su especialidad, pero sí que se asignó a otro trabajador con menor prioridad.
+    """
     no_voluntario_noche_asignados: int = 0
     preferencia_manana_tarde_no_respetadas: int = 0
     especialidad_no_asignada: int = 0
-    especialista_sin_prioridad: int = 0
 
-    jornadas_nocturnas: set[Jornada] = {j for j in jornadas if j.tipo_jornada == TipoJornada.NOCHE}
-    jornadas_manana: set[Jornada] = {j for j in jornadas if j.tipo_jornada == TipoJornada.MANANA}
-    jornadas_tarde: set[Jornada] = {j for j in jornadas if j.tipo_jornada == TipoJornada.TARDE}
+    for trabajador, puesto, jornada in asignacion:
+        if puesto not in trabajador.especialidades:
+            especialidad_no_asignada+=1
+        if trabajador not in voluntarios_noche and jornada.tipo_jornada == TipoJornada.NOCHE:
+            no_voluntario_noche_asignados+=1
+        if trabajador in preferencia_manana and jornada.tipo_jornada != TipoJornada.MANANA:
+            preferencia_manana_tarde_no_respetadas+=1
+        if trabajador in preferencia_tarde and jornada.tipo_jornada != TipoJornada.TARDE:
+            preferencia_manana_tarde_no_respetadas+=1
 
-    jornadas_asignadas: dict[Trabajador, list[Jornada]] = defaultdict(list)
-    puestos_asignados: dict[Trabajador, list[PuestoTrabajo]] = defaultdict(list)
-
-    for (trabajador, puesto, jornada), valor in asignacion.items():
-        if valor:
-            jornadas_asignadas[trabajador].append(jornada)
-            puestos_asignados[trabajador].append(puesto)
-
-            if jornada in jornadas_nocturnas and trabajador not in voluntarios_noche:
-                no_voluntario_noche_asignados += 1
-
-            if jornada in jornadas_tarde and trabajador in preferencia_manana:
-                preferencia_manana_tarde_no_respetadas += 1
-            elif jornada in jornadas_manana and trabajador in preferencia_tarde:
-                preferencia_manana_tarde_no_respetadas += 1
-
-    for puesto, trabajadores_con_especialidad in especialidades.items():
-
-        assigned_workers_to_puesto = set(
-            trabajador
-            for trabajador in trabajadores
-            if any(asignacion.get((trabajador, puesto, jornada), False) for jornada in jornadas)
-        )
-
-        for t in trabajadores_con_especialidad:
-            if t not in assigned_workers_to_puesto:
-                especialidad_no_asignada += 1
-
-        if especialidad_no_asignada > 0:
-            for t in assigned_workers_to_puesto:
-                if t not in trabajadores_con_especialidad:
-                    especialista_sin_prioridad += 1
-
-    return (10 * no_voluntario_noche_asignados +
-        6 * preferencia_manana_tarde_no_respetadas +
-        6 * especialidad_no_asignada +
-        8 * especialista_sin_prioridad)
+    return {
+        "no_voluntario_noche_asignados": no_voluntario_noche_asignados,
+        "preferencia_manana_tarde_no_respetadas": preferencia_manana_tarde_no_respetadas,
+        "especialidad_no_asignada": especialidad_no_asignada,
+    }
 
 
 def objective(trial) -> int:
@@ -97,19 +77,26 @@ def objective(trial) -> int:
         penalizacion_no_voluntario_noche=penalizacion_no_voluntario_noche,
     )
 
-    return compute_loss(asignaciones, trabajadores, jornadas, especialidades, voluntarios_noche, preferencia_manana, preferencia_tarde)
+    loss_dict: dict[str, int] = compute_loss(asignaciones, trabajadores, jornadas, especialidades, voluntarios_noche, preferencia_manana, preferencia_tarde)
+    trial.set_user_attr("no_voluntario_noche_asignados", loss_dict["no_voluntario_noche_asignados"])
+    trial.set_user_attr("preferencia_manana_tarde_no_respetadas", loss_dict["preferencia_manana_tarde_no_respetadas"])
+    trial.set_user_attr("especialidad_no_asignada", loss_dict["especialidad_no_asignada"])
+    return sum(loss_dict.values())
+
 
 def run_optimization(n_trials: int = 50) -> dict[str, Any]:
     study = optuna.create_study(direction="minimize")
     study.optimize(objective, n_trials=n_trials)
     print("Mejores parámetros: ", study.best_params)
     print("Mejor pérdida: ", study.best_value)
+    print("Desglose de pérdidas: ", study.best_trial.user_attrs)
     return study.best_params
 
 
-run_optimization()
+run_optimization(15)
 
 # Primer test:
-# {'capacidad_base': 82, 'capacidad_decaimiento': 7, 'maximo_bonus_especialidad': 30, 'bonus_maximo_jornada': 33, 'penalizacion_no_voluntario_noche': 19}
-# Mejor pérdida: 6810.0
+# Mejores parámetros: {'capacidad_base': 115, 'capacidad_decaimiento': 13, 'maximo_bonus_especialidad': 50, 'bonus_maximo_jornada': 5, 'penalizacion_no_voluntario_noche': 10}
+# Mejor pérdida: 144.0
+# Desglose de pérdidas: {'no_voluntario_noche_asignados': 32, 'preferencia_manana_tarde_no_respetadas': 60, 'especialidad_no_asignada': 52}
 
