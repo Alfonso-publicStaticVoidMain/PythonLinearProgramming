@@ -51,7 +51,7 @@ def objective(trial) -> int:
     capacidad_decaimiento = trial.suggest_int("capacidad_decaimiento", 5, 20)
     maximo_bonus_especialidad = trial.suggest_int("maximo_bonus_especialidad", 20, 100)
     bonus_maximo_jornada = trial.suggest_int("bonus_maximo_jornada", 5, 50)
-    penalizacion_no_voluntario_noche = trial.suggest_int("penalizacion_no_voluntario_noche", 10, 60)
+    penalizacion_no_voluntario_noche = trial.suggest_int("penalizacion_no_voluntario_noche", 100, 1000)
 
     # Load your data once, outside or here if needed
     trabajadores, puestos, jornadas, demanda, especialidades, voluntarios_noche, disponibilidad, voluntarios_doble, preferencia_manana, preferencia_tarde = parse_all_data()
@@ -93,10 +93,10 @@ def run_optimization(n_trials: int = 50) -> dict[str, Any]:
     return study.best_params
 
 
-run_optimization(15)
+run_optimization()
 
 # Primer test:
-# Mejores parámetros: {'capacidad_base': 115, 'capacidad_decaimiento': 13, 'maximo_bonus_especialidad': 50, 'bonus_maximo_jornada': 5, 'penalizacion_no_voluntario_noche': 10}
-# Mejor pérdida: 144.0
-# Desglose de pérdidas: {'no_voluntario_noche_asignados': 32, 'preferencia_manana_tarde_no_respetadas': 60, 'especialidad_no_asignada': 52}
+# Mejores parámetros: {'capacidad_base': 70, 'capacidad_decaimiento': 6, 'maximo_bonus_especialidad': 85, 'bonus_maximo_jornada': 6, 'penalizacion_no_voluntario_noche': 34}
+# Mejor pérdida: 141.0
+# Desglose de pérdidas: {'no_voluntario_noche_asignados': 32, 'preferencia_manana_tarde_no_respetadas': 57, 'especialidad_no_asignada': 52}
 
