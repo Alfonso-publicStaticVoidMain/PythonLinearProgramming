@@ -4,7 +4,6 @@ from itertools import product
 import json
 
 from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, parse_bool, parse_data_into
-from asignacion import realizar_asignacion
 
 T = TypeVar('T')
 get_id = lambda p : p.id
@@ -72,7 +71,7 @@ def parse_excepciones() -> set[tuple[Trabajador, Jornada]]:
     set_excepciones_jornadas: set[tuple[Trabajador, Jornada]] = set()
     set_excepciones_dias: set[Trabajador] = set()
     for entry in excepciones_data: # type: dict[str, Any]
-        if entry["TiposExcepcionesTrabajadoresJornadas"]:
+        if entry.get("TiposExcepcionesTrabajadoresJornadas", {}):
             trabajador = Trabajador.from_id(entry["TipoExcepcionTrabajador"]["trabajador_id"])
             for excepcion in entry["TiposExcepcionesTrabajadoresJornadas"]: # type: dict[str, Any]
                 set_excepciones_jornadas.add((trabajador, Jornada.from_id(excepcion["jornada_id"])))
@@ -164,14 +163,3 @@ def parse_all_data() -> tuple[
 
 
 data = parse_all_data()
-
-
-if __name__ == "__main__":
-    solucion = realizar_asignacion(
-        *data,
-        verbose_estadisticas_avanzadas=True,
-        verbose_general=True,
-        verbose_asignacion_trabajadores=True,
-        verbose_asignacion_puestos=False,
-        forzar_maximo_asignaciones_especialidad=False
-    )

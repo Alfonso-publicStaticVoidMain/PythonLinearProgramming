@@ -5,6 +5,7 @@ from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import CpModel, IntVar, LinearExpr, CpSolver
 
 from Clases import Trabajador, PuestoTrabajo, Jornada, NivelDesempeno, TipoJornada
+from parse import data
 
 
 def format_duration(seconds: float | int) -> str:
@@ -25,13 +26,24 @@ def format_duration(seconds: float | int) -> str:
         return f"{hours} horas, {minutes} minutos y {rem_seconds} segundos"
 
 
-def calcular_puntuacion(bonus_maximo_jornada: int, capacidad_base: int, capacidad_decaimiento: int, especialidades: dict[PuestoTrabajo, list[Trabajador]],
-                        jornadas_noche: int, maximo_bonus_especialidad: int, penalizacion_no_voluntario_noche: int,
-                        preferencia_manana: list[Trabajador], preferencia_tarde: list[Trabajador],
-                        voluntarios_noche: list[Trabajador], set_preferencia_manana: set[Trabajador],
-                        set_preferencia_tarde: set[Trabajador], set_voluntarios_noche: set[Trabajador],
-                        sets_especialidades: dict[PuestoTrabajo, set[Trabajador]],
-                        vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar]) -> LinearExpr:
+def calcular_puntuacion(
+    bonus_maximo_jornada: int,
+    bonus_maximo_voluntarios_noche: int,
+    capacidad_base: int,
+    capacidad_decaimiento: int,
+    maximo_bonus_especialidad: int,
+    penalizacion_no_voluntario_noche: int,
+    especialidades: dict[PuestoTrabajo, list[Trabajador]],
+    jornadas_noche: set[Jornada],
+    preferencia_manana: list[Trabajador],
+    preferencia_tarde: list[Trabajador],
+    voluntarios_noche: list[Trabajador],
+    sets_especialidades: dict[PuestoTrabajo, set[Trabajador]],
+    set_preferencia_manana: set[Trabajador],
+    set_preferencia_tarde: set[Trabajador],
+    set_voluntarios_noche: set[Trabajador],
+    vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar]
+) -> LinearExpr:
     # Se precomputan diccionarios mapeando cada trabajador a su posición en la lista_especialidades de voluntarios de noche, preferencia
     # de mañana y tarde y en cada lista_especialidades de especialidades, para mayor eficiencia posteriormente.
     index_voluntarios_noche: dict[Trabajador, int] = {trabajador: indice for indice, trabajador in enumerate(voluntarios_noche)}
@@ -56,30 +68,35 @@ def calcular_puntuacion(bonus_maximo_jornada: int, capacidad_base: int, capacida
 
         # Puntuación por preferencia de jornada o penalización por no ser voluntario para noche
         puntuacion_jornada = 0
-        if jornada not in jornadas_noche:
+        if jornada in jornadas_noche:
             if trabajador in set_voluntarios_noche:
                 # Si asignamos un voluntario de noche a una jornada de noche, obtenemos un bonus, proporcional a su
                 # posición en la lista_especialidades.
-                puntuacion_jornada = max(0, bonus_maximo_jornada - index_voluntarios_noche.get(trabajador, bonus_maximo_jornada))
+                puntuacion_jornada = max(0, bonus_maximo_voluntarios_noche - index_voluntarios_noche.get(trabajador, bonus_maximo_voluntarios_noche))
             else:
                 # Si asignamos a un no-voluntario a una jornada de noche, obtenemos una penalización.
                 puntuacion_jornada -= penalizacion_no_voluntario_noche  # Penalty for assigning non-volunteer to a night shift
         elif (jornada.tipo_jornada == TipoJornada.MANANA) and trabajador in set_preferencia_manana:
             # Si asignamos a un trabajador con preferencia de mañana a una jornada de mañana, obtenemos un bonus,
             # proporcional a su posición en la lista_especialidades.
-            puntuacion_jornada = max(0, bonus_maximo_jornada - index_preferencia_manana.get(trabajador,
-                                                                                            bonus_maximo_jornada))
+            puntuacion_jornada = max(0, bonus_maximo_jornada - index_preferencia_manana.get(trabajador, bonus_maximo_jornada))
         elif (jornada.tipo_jornada == TipoJornada.TARDE) and trabajador in set_preferencia_tarde:
             # Si asignamos a un trabajador con preferencia de tarde a una jornada de tarde, obtenemos un bonus,
             # proporcional a su posición en la lista_especialidades.
             puntuacion_jornada = max(0, bonus_maximo_jornada - index_preferencia_tarde.get(trabajador, bonus_maximo_jornada))
 
         puntuaciones[trabajador, puesto, jornada] = puntuacion_capacidad + puntuacion_especialidad + puntuacion_jornada
-    puntuacion_total: LinearExpr = LinearExpr.sum([
+    return LinearExpr.sum([
         puntuaciones[trabajador, puesto, jornada] * vars[trabajador, puesto, jornada]
         for trabajador, puesto, jornada in vars  # type: Trabajador, PuestoTrabajo, Jornada
     ])
-    return puntuacion_total
+
+
+def print_estadisticas_avanzadas(solver: CpSolver, mensaje: str = ""):
+    print(mensaje)
+    print(f"Problema resuelto en: {format_duration(solver.wall_time)}")
+    print(f"Conflictos: {solver.NumConflicts()}")
+    print(f"Ramas: {solver.NumBranches()}\n")
 
 
 def realizar_asignacion(
@@ -108,13 +125,15 @@ def realizar_asignacion(
     verbose_asignacion_puestos: bool = False,
     # Parámetros de los pesos para la función objetivo a maximizar.
     capacidad_base: int = 100,
-    capacidad_decaimiento: int = 10,
-    maximo_bonus_especialidad: int = 50,
-    bonus_maximo_jornada: int = 20,
-    penalizacion_no_voluntario_noche: int = 100,
+    capacidad_decaimiento: int = 2,
+    maximo_bonus_especialidad: int = 30,
+    bonus_maximo_preferencia_jornada: int = 100,
+    bonus_maximo_voluntarios_noche: int = 150,
+    penalizacion_no_voluntario_noche: int = 500,
 
-    forzar_maximo_asignaciones_especialidad: bool = False
-) -> set[tuple[Trabajador, PuestoTrabajo, Jornada]]:
+    forzar_maximo_asignaciones_especialidad: bool = False,
+    frozar_maximo_asignaciones_voluntarios_noche: bool = False
+) -> tuple[set[tuple[Trabajador, PuestoTrabajo, Jornada]], CpModel, dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar]]:
 
     model: CpModel = cp_model.CpModel()
 
@@ -152,7 +171,7 @@ def realizar_asignacion(
 
     # Se crea una lista_especialidades de variables que representan la asignación de un trabajador a su especialidad.
     asignaciones_especialidades: list[IntVar] = []
-    voluntario_a_noche: list[IntVar] = []
+    voluntario_a_noche_asignado_a_noche: list[IntVar] = []
 
     for trabajador in trabajadores: # type: Trabajador
         for puesto in puestos: # type: PuestoTrabajo
@@ -174,13 +193,17 @@ def realizar_asignacion(
                     if puesto in trabajador.especialidades:
                         asignaciones_especialidades.append(var)
                     if trabajador in set_voluntarios_noche and jornada in jornadas_noche:
-                        voluntario_a_noche.append(var)
+                        voluntario_a_noche_asignado_a_noche.append(var)
 
     num_trabajadores_disponibles: int = len({trabajador for (trabajador, puesto, jornada) in vars})
     total_asignaciones_especialidades: LinearExpr = LinearExpr.sum(asignaciones_especialidades)
+    vol_noche_asignados_a_noche: LinearExpr = LinearExpr.sum(voluntario_a_noche_asignado_a_noche)
+    jornadas_trabajadas_por_trabajador: dict[Trabajador, LinearExpr] = {}
 
     for trabajador in trabajadores: # type: Trabajador
         total_jornadas_trabajadas: LinearExpr = LinearExpr.sum(vars_por_trabajador[trabajador])
+        jornadas_trabajadas_por_trabajador[trabajador] = total_jornadas_trabajadas
+
         if trabajador in set_voluntarios_doble:
             # Cada trabajador puede trabajar a lo sumo 2 jornadas, o 1 si no está en la lista_especialidades de voluntarios para dobles.
             model.Add(total_jornadas_trabajadas <= 2)
@@ -204,11 +227,44 @@ def realizar_asignacion(
         for jornada in jornadas: # type: Jornada
             model.Add(LinearExpr.sum(vars_por_puesto_y_jornada[puesto, jornada]) == demanda.get((puesto, jornada), 0))
 
-    puntuacion_total = calcular_puntuacion(bonus_maximo_jornada, capacidad_base, capacidad_decaimiento, especialidades,
-                                           jornadas_noche, maximo_bonus_especialidad, penalizacion_no_voluntario_noche,
-                                           preferencia_manana, preferencia_tarde, voluntarios_noche,
-                                           set_preferencia_manana, set_preferencia_tarde, set_voluntarios_noche,
-                                           sets_especialidades, vars)
+    puntuacion_total = calcular_puntuacion(
+        bonus_maximo_preferencia_jornada,
+        bonus_maximo_voluntarios_noche,
+        capacidad_base,
+        capacidad_decaimiento,
+        maximo_bonus_especialidad,
+        penalizacion_no_voluntario_noche,
+        especialidades,
+        jornadas_noche,
+        preferencia_manana,
+        preferencia_tarde,
+        voluntarios_noche,
+        sets_especialidades,
+        set_preferencia_manana,
+        set_preferencia_tarde,
+        set_voluntarios_noche,
+        vars
+    )
+
+    if frozar_maximo_asignaciones_voluntarios_noche:
+        model.Maximize(vol_noche_asignados_a_noche)
+
+        solver: CpSolver = cp_model.CpSolver()
+        solver.parameters.num_search_workers = 8
+        solver.parameters.search_branching = cp_model.FIXED_SEARCH
+        status: CpSolverStatus = solver.Solve(model)
+
+        if verbose_estadisticas_avanzadas:
+            print_estadisticas_avanzadas(solver, "Asignación voluntarios noche: Estadísticas avanzadas.")
+
+        if status not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+            if verbose_estadisticas_avanzadas: print("No se encontró ninguna solución en el paso 1.\n")
+            return set()
+
+        if verbose_general:
+            print(f"Máximo de asignaciones de voluntarios de noche a turnos de noche: {int(solver.ObjectiveValue())}\n")
+
+        model.Add(vol_noche_asignados_a_noche == int(solver.ObjectiveValue()))
 
     if forzar_maximo_asignaciones_especialidad:
         # En el primer paso se busca maximizar el número de asignaciones a especialidades.
@@ -220,18 +276,19 @@ def realizar_asignacion(
         status: CpSolverStatus = solver.Solve(model)
 
         if verbose_estadisticas_avanzadas:
-            print("Paso 1: Estadísticas avanzadas")
-            print(f"Problema resuelto en: {format_duration(solver.wall_time)}")
-            print(f"Conflictos: {solver.NumConflicts()}")
-            print(f"Ramas: {solver.NumBranches()}\n")
+            print_estadisticas_avanzadas(solver, "Asignación especialidades: Estadísticas avanzadas.")
 
         if status not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
-            if verbose_estadisticas_avanzadas: print("No se encontró ninguna solución en el paso 1.")
-            return set()
+            if verbose_estadisticas_avanzadas: print("No se encontró ninguna solución en este paso.")
+            return set(), model, vars
+
+        maximo_asignaciones_especialidades = int(solver.ObjectiveValue())
+        if verbose_general:
+            print(f"Máximo de asignaciones de especialidad obtenidas: {maximo_asignaciones_especialidades}\n")
 
         # Encontrado el número máximo de asignaciones de especialidades, se añade una nueva restricción al modelo de que
         # la solución que aceptemos tenga ese número de asignaciones a especialidades, y no nos conformemos con menos.
-        model.Add(total_asignaciones_especialidades == int(solver.ObjectiveValue()))
+        model.Add(total_asignaciones_especialidades == maximo_asignaciones_especialidades)
 
     # Cambiamos ahora la función a maximizar por la suma total de puntuaciones recibidas por las asignaciones realizadas.
     # De esta forma escogemos de entre las soluciones con máximas asignaciones a especialidades la que maximice también
@@ -239,7 +296,7 @@ def realizar_asignacion(
     model.Maximize(puntuacion_total)
 
     # Se fuerza a que considere primero las asignaciones a noche
-    # model.AddDecisionStrategy(voluntario_a_noche, cp_model.CHOOSE_FIRST, cp_model.SELECT_MAX_VALUE)
+    # model.AddDecisionStrategy(voluntario_a_noche_asignado_a_noche, cp_model.CHOOSE_FIRST, cp_model.SELECT_MAX_VALUE)
 
     solver2: CpSolver = cp_model.CpSolver()
     solver2.parameters.num_search_workers = 8
@@ -247,10 +304,7 @@ def realizar_asignacion(
     status: CpSolverStatus = solver2.solve(model)
 
     if verbose_estadisticas_avanzadas:
-        print("Paso 2: Estadísticas avanzadas")
-        print(f"Problema resuelto en: {format_duration(solver2.wall_time)}")
-        print(f"Conflictos: {solver2.NumConflicts()}")
-        print(f"Ramas: {solver2.NumBranches()}\n")
+        print_estadisticas_avanzadas(solver2, "Asignacion final: Estadísticas avanzadas")
 
     resultado: set[tuple[Trabajador, PuestoTrabajo, Jornada]] = set()
 
@@ -283,23 +337,45 @@ def realizar_asignacion(
 
         trabajadores_asignados: int = len({trabajador for trabajador, _, _ in resultado})
 
+        puestos_demandados: int = 0
+        puestos_nocturnos_demandados: int = 0
+        for (_, jornada), valor in demanda.items(): # type: tuple[PuestoTrabajo, Jornada], int
+            if jornada in jornadas_noche:
+                puestos_nocturnos_demandados += valor
+            puestos_demandados += valor
+
+        numero_voluntarios_noche: int = len(voluntarios_noche)
+        numero_preferencia_manana: int = len(preferencia_manana)
+        numero_preferencia_tarde: int = len(preferencia_tarde)
+        asignaciones_especialidades_alcanzadas: int = solver2.Value(total_asignaciones_especialidades)
+
+        ultimo_codigo_asignado_por_especialidad: dict[PuestoTrabajo, int | None] = {
+            puesto: max({trabajador.codigo for (trabajador, puesto, _) in resultado if
+                         trabajador in sets_especialidades.get(puesto, {})}, default=None)
+            for puesto in puestos  # type: PuestoTrabajo
+        }
+
+        trabajadores_voluntarios_asignados_noche: set[Trabajador] = {
+            trabajador
+            for trabajador, _, jornada in resultado  # type: Trabajador, PuestoTrabajo, Jornada
+            if trabajador in set_voluntarios_noche and jornada in jornadas_noche
+        }
+
+        ultimo_codigo_voluntarios_noche: int | None = max({
+            trabajador.codigo
+            for trabajador in trabajadores_voluntarios_asignados_noche
+        }, default=None)
+
+        ultimo_codigo_voluntarios_doble: int | None = max({
+            trabajador.codigo
+            for trabajador in trabajadores_asignados_dobles  # type: Trabajador
+        }, default=None)
+
         if verbose_general:
             if status == cp_model.OPTIMAL:
                 print('Solución óptima encontrada.')
             else:
                 print('Solución factible encontrada. No se puede garantizar que sea óptima.')
-
-            puestos_demandados: int = 0
-            puestos_nocturnos_demandados: int = 0
-            for (_, jornada), valor in demanda.items(): # type: tuple[PuestoTrabajo, Jornada], int
-                if jornada in jornadas_noche:
-                    puestos_nocturnos_demandados += valor
-                puestos_demandados += valor
-
-            numero_voluntarios_noche: int = len(voluntarios_noche)
-            numero_preferencia_manana: int = len(preferencia_manana)
-            numero_preferencia_tarde: int = len(preferencia_tarde)
-            asignaciones_especialidades_alcanzadas: int = solver2.Value(total_asignaciones_especialidades)
 
             print(f"\nSe demandaron {puestos_nocturnos_demandados} puestos nocturnos y hay {numero_voluntarios_noche} voluntarios de noche.")
             print(f"Se asignaron {voluntarios_noche_asignados_a_noche} de {numero_voluntarios_noche} ({100 * float(voluntarios_noche_asignados_a_noche) / numero_voluntarios_noche:.2f}%) voluntarios de noche a turnos de noche.\n")
@@ -330,43 +406,34 @@ def realizar_asignacion(
 
         if verbose_asignacion_puestos:
             for jornada in jornadas: # type: Jornada
-                print(f'{jornada.nombre_es.capitalize()}:')
+                print(f'\n{jornada.nombre_es.capitalize()}:\n')
 
                 for puesto in puestos: # type: PuestoTrabajo
                     trabajadores_demandados: int = demanda.get((puesto, jornada), 0)
-                    if trabajadores_demandados != trabajadores_asignados:
+                    trabajadores_asignados_a_puesto_y_jornada: int = len({trabajador for trabajador, p, j in resultado if p == puesto and j == jornada})
+                    if trabajadores_demandados != trabajadores_asignados_a_puesto_y_jornada:
                         print('**********************************************')
                         print(f'{puesto} en jornada {jornada}: MISMATCH!!!!')
                         print('**********************************************')
-                    print(f'{puesto.nombre_es} (demanda: {trabajadores_demandados}) asignado a {trabajadores_asignados} trabajadores:')
+                    print(f'{puesto.nombre_es} (demanda: {trabajadores_demandados}) asignado a {trabajadores_asignados_a_puesto_y_jornada} trabajadores:')
 
                     for trabajador in trabajadores: # type: Trabajador
                         if (trabajador, puesto, jornada) in resultado:
                             print(f'\tTrabajador {trabajador:<3}', f'\t{trabajador.capacidades[puesto].nombre_es}')
 
-        ultimo_codigo_asignado_por_especialidad: dict[PuestoTrabajo, int | None] = {
-            puesto : max({trabajador.codigo for (trabajador, puesto, _) in resultado if trabajador in sets_especialidades.get(puesto, {})}, default=None)
-            for puesto in puestos # type: PuestoTrabajo
-        }
-
-        trabajadores_voluntarios_asignados_noche: set[Trabajador] = {
-            trabajador
-            for trabajador, _, jornada in resultado  # type: Trabajador, PuestoTrabajo, Jornada
-            if trabajador in set_voluntarios_noche
-            and jornada in jornadas_noche
-        }
-
-        ultimo_codigo_voluntarios_noche: int | None = max({
-            trabajador.codigo
-            for trabajador in trabajadores_voluntarios_asignados_noche
-        }, default=None)
-
-        ultimo_codigo_voluntarios_doble: int | None = max({
-            trabajador.codigo
-            for trabajador in trabajadores_asignados_dobles # type: Trabajador
-        }, default=None)
-
-    elif verbose_estadisticas_avanzadas:
+    elif verbose_general:
         print('Ninguna solución factible encontrada')
 
-    return resultado
+    return resultado, model, vars
+
+
+if __name__ == "__main__":
+    solucion, model, vars = realizar_asignacion(
+        *data,
+        verbose_estadisticas_avanzadas=True,
+        verbose_general=True,
+        verbose_asignacion_trabajadores=True,
+        verbose_asignacion_puestos=True,
+        forzar_maximo_asignaciones_especialidad=True,
+        frozar_maximo_asignaciones_voluntarios_noche=True
+    )

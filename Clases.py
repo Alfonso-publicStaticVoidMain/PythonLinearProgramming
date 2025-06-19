@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import Field
 from dataclasses import dataclass, field, is_dataclass, fields
 from datetime import date, datetime
-from typing import ClassVar, Type, TypeVar, Any, Iterable, get_type_hints
+from typing import ClassVar, Type, TypeVar, Any, get_type_hints
 from enum import Enum
 
 
@@ -33,13 +34,16 @@ def parse_data_into(cls: Type[T], data: dict[str, Any]) -> T:
         raise ValueError(f"{cls.__name__} is not a dataclass")
 
     type_hints: dict[str, Any] = get_type_hints(cls)
-    field_types: dict[str, Any] = {field.name: type_hints[field.name] for field in fields(cls)}
+    field_names_and_types: dict[str, Any] = {
+        field.name : type_hints[field.name]
+        for field in fields(cls) # type: Field
+    }
     filtered_data: dict[str, Any] = {}
-    for k, v in data.items():
-        if k in field_types:
+    for k, v in data.items(): # type: str, Any
+        if k in field_names_and_types:
             filtered_data[k] = v
         else:
-            for field_name, field_type in field_types.items():
+            for field_name, field_type in field_names_and_types.items(): # type: str, Any
                 if is_dataclass(field_type) and field_type.__name__ == k:
                     filtered_data[field_name] = parse_data_into(field_type, v)
                     break
@@ -47,10 +51,15 @@ def parse_data_into(cls: Type[T], data: dict[str, Any]) -> T:
     return cls(**filtered_data)
 
 
-def get_by_id(collection: Iterable[T], cls: Type[T], id_: int | str | float, fallback: T | None = None) -> T | None:
+def get_by_id(
+    collection: Iterable[T],
+    cls: Type[T],
+    id_: int | str | float,
+    fallback: T | None = None
+) -> T | None:
     """
     Busca en un iterable de tipo T (que extienda Identificable) el único objeto con un cierto ID.
-    :param collection: Iterable de tipo T, el cual debe tener extender de Identificable.
+    :param collection: Objeto iterable que contiene objetos de tipo T, el cual debe extender de Identificable.
     :param cls: Clase T contenida en el iterable.
     :param id_: ID que buscar dentro del iterable.
     :param fallback: Valor por defecto que retornar si no se encuentra el ID. Por defecto es None.
@@ -65,7 +74,7 @@ def get_by_id(collection: Iterable[T], cls: Type[T], id_: int | str | float, fal
     if candidate in collection:
         return candidate
     else:
-        for item in collection:
+        for item in collection: # type: T
             if item.id == id_:
                 cls.get_registro()[item.id] = item
                 return item
@@ -91,35 +100,50 @@ class Identificable:
     def get_registro(cls: Type[T]) -> dict[int, T]:
         """
         Método de clase heredado por las clases que extiendan Identificable. Retorna el diccionario asignado a la propia
-        clase en el diccionario _registro de Identificable. Si no estaba presente, primero lo inicializa como un
-        diccionario vacío.
+        clase en el diccionario _registro de Identificable.
         """
-        if cls not in cls._registros:
-            cls._registros[cls] = {}
         return cls._registros[cls]
+
+    def __new__(cls: type[T], *args, **kwargs) -> T:
+        if 'id' in kwargs:
+            id_ = int(kwargs['id'])
+        elif args:
+            id_ = int(args[0])
+        else:
+            raise ValueError(f"No se puede encontrar el argumento 'id' al crear un objeto de {cls.name} con parámetros {args} y {kwargs}")
+
+        registro = cls._registros[cls]
+        existente = registro.get(id_)
+
+        if existente is not None:
+            # Create a temporary dummy to compare attributes
+            dummy = super(Identificable, cls).__new__(cls)
+            object.__setattr__(dummy, 'id', id_)
+            dummy.__init__(*args, **kwargs)
+
+            for field_ in fields(cls):
+                if field_.name.startswith('_'):
+                    continue
+                val_existing = getattr(existente, field_.name)
+                val_new = getattr(dummy, field_.name)
+                if val_existing != val_new:
+                    raise ValueError(
+                        f"Conflicto con ID duplicado en id={id_} para la clase {cls.__name__}: "
+                        f"El campo '{field_.name}' es distinto "
+                        f"(existente={val_existing!r}, nuevo={val_new!r})"
+                    )
+            return existente
+        else:
+            obj = super(Identificable, cls).__new__(cls)
+            registro[id_] = obj
+            return obj
 
     def __post_init__(self: Identificable) -> None:
         """
-        Añade automáticamente el objeto recién creado al registro si no estaba presente allí.
-        Si ya estaba presente, comprueba si todos sus atributos son iguales. En tal caso, permite la creación del
-        objeto, pero no lo intenta añadir al registro. Si algún atributo es distinto, lanza una excepción.
+        Fuerza que el ID del objeto Identificable sea un entero, previendo los casos en los que se le pudiera
+        haber asignado un string.
         """
         object.__setattr__(self, 'id', int(self.id))
-        registro: dict[int, Identificable] = type(self).get_registro()
-        existente: Identificable = registro.get(self.id, None)
-        if existente is not None:
-            for field_ in fields(self): # type: Field
-                if field_.name.startswith('_'):
-                    continue
-                value_new: Any = getattr(self, field_.name)
-                value_existing: Any = getattr(existente, field_.name)
-                if value_new != value_existing:
-                    raise ValueError(
-                        f"Conflicto con ID duplicado en id={self.id} para la clase {type(self).__name__}: "
-                        f"El campo '{field_.name}' es distinto (existente={value_existing!r}, nuevo={value_new!r})"
-                    )
-        else:
-            registro[self.id] = self
 
     def __eq__(self: Identificable, other: object) -> bool:
         """
@@ -130,7 +154,7 @@ class Identificable:
 
     def __hash__(self: Identificable) -> int:
         """
-        Crea el hash del objeto teniendo en cuenta su tipo y su id.
+        Crea el hash del objeto teniendo en cuenta su tipo y su ID.
         """
         return hash((type(self), self.id))
 
@@ -305,6 +329,14 @@ class Jornada(Enum):
         return f"{self.nombre_es} ({self.tipo_jornada})"
 
     @classmethod
+    def jornadas_nocturnas(cls: Jornada) -> set[Jornada]:
+        return {
+            jornada
+            for jornada in Jornada # type: Jornada
+            if jornada.tipo_jornada == TipoJornada.NOCHE
+        }
+
+    @classmethod
     def from_id(cls: Type[Jornada], id_: int | str) -> Jornada | None:
         try:
             id_ = int(id_)
@@ -387,8 +419,8 @@ class TrabajadorContrato(Identificable):
 
 def test_trabajador_registry():
     print("Creating Trabajadores manually:")
-    t1 = Trabajador(id=1, nombre="Alice", apellidos="Smith")
-    t2 = Trabajador(id=2, nombre="Bob", apellidos="Jones")
+    t1 = Trabajador(id=1, nombre="Alice", apellidos="Smith", codigo=1)
+    t2 = Trabajador(id=2, nombre="Bob", apellidos="Jones", codigo=2)
     print(t1, t2)
 
     print("Registry contents:")
@@ -400,22 +432,22 @@ def test_trabajador_registry():
     assert Trabajador.from_id(2) is t2
 
     print("Using get_or_create_from with new data:")
-    t3 = Trabajador.get_or_create({"id":3, "nombre":"Carol", "apellidos":"White"})
+    t3 = Trabajador.get_or_create({"id":3, "nombre":"Carol", "apellidos":"White", "codigo":"3"})
     print(t3)
     assert Trabajador.from_id(3) is t3
 
     print("Using get_or_create_from with existing id:")
-    t1_again = Trabajador.get_or_create({"id":1, "nombre":"ShouldNotChange", "apellidos":"Name"})
+    t1_again = Trabajador.get_or_create({"id":1, "nombre":"ShouldNotChange", "apellidos":"Name", "codigo":"1"})
     print(t1_again)
     assert t1_again is t1  # No overwrite
 
     print("Using get_or_create with new data:")
-    t4 = Trabajador.get_or_create({"id":4, "nombre":"David", "apellidos":"Green"})
+    t4 = Trabajador.get_or_create({"id":4, "nombre":"David", "apellidos":"Green", "codigo":"4"})
     print(t4)
     assert Trabajador.from_id(4) is t4
 
     print("Using get_or_create with existing id:")
-    t2_again = Trabajador.get_or_create({"id":2, "nombre":"NewName", "apellidos":"LastName"})
+    t2_again = Trabajador.get_or_create({"id":2, "nombre":"NewName", "apellidos":"LastName", "codigo":"2"})
     print(t2_again)
     assert t2_again is t2
 
