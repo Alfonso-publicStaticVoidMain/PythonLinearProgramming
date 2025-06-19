@@ -4,12 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="fd6ce6cc-75c1-496c-99dd-c1aee2ad9ff6" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/asignacion.py" beforeDir="false" afterPath="$PROJECT_DIR$/asignacion.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/parameter_tuning.py" beforeDir="false" afterPath="$PROJECT_DIR$/parameter_tuning.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/parse.py" beforeDir="false" afterPath="$PROJECT_DIR$/parse.py" afterDir="false" />
-    </list>
+    <list default="true" id="fd6ce6cc-75c1-496c-99dd-c1aee2ad9ff6" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />

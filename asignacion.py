@@ -25,31 +25,18 @@ def format_duration(seconds: float | int) -> str:
         return f"{hours} horas, {minutes} minutos y {rem_seconds} segundos"
 
 
-def calcular_puntuacion(
-    bonus_maximo_jornada: int,
-    capacidad_base: int,
-    capacidad_decaimiento: int,
-    especialidades: int,
-    jornadas_noche: int,
-    maximo_bonus_especialidad: int,
-    penalizacion_no_voluntario_noche: int,
-    preferencia_manana: list[Trabajador],
-    preferencia_tarde: list[Trabajador],
-    set_preferencia_manana: set[Trabajador],
-    set_preferencia_tarde: set[Trabajador],
-    set_voluntarios_noche: set[Trabajador],
-    sets_especialidades: dict[PuestoTrabajo, set[Trabajador]],
-    vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar],
-    voluntarios_noche: list[Trabajador]
-):
+def calcular_puntuacion(bonus_maximo_jornada: int, capacidad_base: int, capacidad_decaimiento: int, especialidades: int,
+                        jornadas_noche: int, maximo_bonus_especialidad: int, penalizacion_no_voluntario_noche: int,
+                        preferencia_manana: list[Trabajador], preferencia_tarde: list[Trabajador],
+                        voluntarios_noche: list[Trabajador], set_preferencia_manana: set[Trabajador],
+                        set_preferencia_tarde: set[Trabajador], set_voluntarios_noche: set[Trabajador],
+                        sets_especialidades: dict[PuestoTrabajo, set[Trabajador]],
+                        vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar]) -> LinearExpr:
     # Se precomputan diccionarios mapeando cada trabajador a su posición en la lista_especialidades de voluntarios de noche, preferencia
     # de mañana y tarde y en cada lista_especialidades de especialidades, para mayor eficiencia posteriormente.
-    index_voluntarios_noche: dict[Trabajador, int] = {trabajador: indice for indice, trabajador in
-                                                      enumerate(voluntarios_noche)}
-    index_preferencia_manana: dict[Trabajador, int] = {trabajador: indice for indice, trabajador in
-                                                       enumerate(preferencia_manana)}
-    index_preferencia_tarde: dict[Trabajador, int] = {trabajador: indice for indice, trabajador in
-                                                      enumerate(preferencia_tarde)}
+    index_voluntarios_noche: dict[Trabajador, int] = {trabajador: indice for indice, trabajador in enumerate(voluntarios_noche)}
+    index_preferencia_manana: dict[Trabajador, int] = {trabajador: indice for indice, trabajador in enumerate(preferencia_manana)}
+    index_preferencia_tarde: dict[Trabajador, int] = {trabajador: indice for indice, trabajador in enumerate(preferencia_tarde)}
     index_especialidad: dict[PuestoTrabajo, dict[Trabajador, int]] = {
         puesto: {trabajador: indice for indice, trabajador in enumerate(lista)}
         for puesto, lista in especialidades.items()  # type: Trabajador, list[PuestoTrabajo]
@@ -219,8 +206,9 @@ def realizar_asignacion(
 
     puntuacion_total = calcular_puntuacion(bonus_maximo_jornada, capacidad_base, capacidad_decaimiento, especialidades,
                                            jornadas_noche, maximo_bonus_especialidad, penalizacion_no_voluntario_noche,
-                                           preferencia_manana, preferencia_tarde, set_preferencia_manana, set_preferencia_tarde,
-                                           set_voluntarios_noche, sets_especialidades, vars, voluntarios_noche)
+                                           preferencia_manana, preferencia_tarde, voluntarios_noche,
+                                           set_preferencia_manana, set_preferencia_tarde, set_voluntarios_noche,
+                                           sets_especialidades, vars)
 
     if forzar_maximo_asignaciones_especialidad:
         # En el primer paso se busca maximizar el número de asignaciones a especialidades.
