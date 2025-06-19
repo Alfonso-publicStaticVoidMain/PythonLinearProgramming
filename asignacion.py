@@ -25,7 +25,7 @@ def format_duration(seconds: float | int) -> str:
         return f"{hours} horas, {minutes} minutos y {rem_seconds} segundos"
 
 
-def calcular_puntuacion(bonus_maximo_jornada: int, capacidad_base: int, capacidad_decaimiento: int, especialidades: int,
+def calcular_puntuacion(bonus_maximo_jornada: int, capacidad_base: int, capacidad_decaimiento: int, especialidades: dict[PuestoTrabajo, list[Trabajador]],
                         jornadas_noche: int, maximo_bonus_especialidad: int, penalizacion_no_voluntario_noche: int,
                         preferencia_manana: list[Trabajador], preferencia_tarde: list[Trabajador],
                         voluntarios_noche: list[Trabajador], set_preferencia_manana: set[Trabajador],
