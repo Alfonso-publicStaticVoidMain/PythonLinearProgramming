@@ -1,9 +1,9 @@
-from typing import Type, TypeVar, Any, get_type_hints
+from typing import TypeVar, Any
 from collections import defaultdict
 from itertools import product
 import json
 
-from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, parse_bool, parse_data_into
+from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, parse_bool
 
 T = TypeVar('T')
 get_id = lambda p : p.id
@@ -70,6 +70,7 @@ def parse_demandas() -> dict[tuple[PuestoTrabajo, Jornada], int]:
 def parse_excepciones() -> set[tuple[Trabajador, Jornada]]:
     set_excepciones_jornadas: set[tuple[Trabajador, Jornada]] = set()
     set_excepciones_dias: set[Trabajador] = set()
+
     for entry in excepciones_data: # type: dict[str, Any]
         if entry.get("TiposExcepcionesTrabajadoresJornadas", {}):
             trabajador = Trabajador.from_id(entry["TipoExcepcionTrabajador"]["trabajador_id"])
