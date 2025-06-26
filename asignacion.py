@@ -62,15 +62,21 @@ class ParametrosPuntuacion(NamedTuple):
     max_preferencia_jornada: int
     decay_preferencia_jornada: int
 
+    coef_dobles: float | int
+    max_dobles: int
+    decay_dobles: int
+
     penalizacion_no_voluntario_noche: int
+    penalizacion_no_respeto_preferencia: int
 
 
 def calcular_puntuacion(
     listas_preferencias: ListasPreferencias,
     vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar],
     parametros: ParametrosPuntuacion
-) -> dict[tuple[Trabajador, PuestoTrabajo, Jornada], int]:
-    puntuaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], int] = {}
+) -> tuple[dict[tuple[Trabajador, PuestoTrabajo, Jornada], int], dict[Trabajador, float | int]]:
+    puntuaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], float | int] = {}
+    dobles: dict[Trabajador, float | int] = {}
 
     especialidades, voluntarios_noche, voluntarios_doble, preferencia_manana, preferencia_tarde = listas_preferencias
 
@@ -79,7 +85,11 @@ def calcular_puntuacion(
     coef_voluntarios_noche, max_voluntarios_noche, decay_voluntarios_noche,
     coef_voluntarios_doble, max_voluntarios_doble, decay_voluntarios_doble,
     coef_preferencia_jornada, max_preferencia_jornada, decay_preferencia_jornada,
-    penalizacion_no_voluntario_noche) = parametros
+    coef_dobles, max_dobles, decay_dobles,
+    penalizacion_no_voluntario_noche, penalizacion_no_respeto_preferencia) = parametros
+
+    for trabajador in voluntarios_doble:
+        dobles[trabajador] = coef_dobles * (max_dobles - decay_dobles * voluntarios_doble.index(trabajador))
 
     for trabajador, puesto, jornada in vars:
 
@@ -103,19 +113,22 @@ def calcular_puntuacion(
                 # Si asignamos a un no-voluntario a una jornada de noche, obtenemos una penalización.
                 puntuacion_jornada -= penalizacion_no_voluntario_noche  # Penalty for assigning non-volunteer to a night shift
 
-        elif jornada.tipo_jornada == TipoJornada.MANANA and trabajador in preferencia_manana:
+        elif jornada == Jornada.MANANA and trabajador in preferencia_manana:
             # Si asignamos a un trabajador con preferencia de mañana a una jornada de mañana, obtenemos un bonus,
             # proporcional a su posición en la lista_especialidades.
             puntuacion_jornada += max(0, max_preferencia_jornada - decay_preferencia_jornada * preferencia_manana.index(trabajador))
 
-        elif jornada.tipo_jornada == TipoJornada.TARDE and trabajador in preferencia_tarde:
+        elif jornada == Jornada.TARDE and trabajador in preferencia_tarde:
             # Si asignamos a un trabajador con preferencia de tarde a una jornada de tarde, obtenemos un bonus,
             # proporcional a su posición en la lista_especialidades.
             puntuacion_jornada += max(0, max_preferencia_jornada - decay_preferencia_jornada * preferencia_tarde.index(trabajador))
 
+        elif (jornada != Jornada.MANANA and trabajador in preferencia_manana) or (jornada != Jornada.TARDE and trabajador in preferencia_tarde):
+            puntuacion_jornada -= penalizacion_no_respeto_preferencia
+
         puntuaciones[trabajador, puesto, jornada] = coef_capacidad * puntuacion_capacidad + coef_especialidad * puntuacion_especialidad + coef_preferencia_jornada * puntuacion_jornada
 
-    return puntuaciones
+    return puntuaciones, dobles
 
 
 def realizar_asignacion(
@@ -150,7 +163,12 @@ def realizar_asignacion(
         max_capacidad=60,
         decay_capacidad=1,
 
-        penalizacion_no_voluntario_noche=200
+        coef_dobles=1,
+        max_dobles=40,
+        decay_dobles=1,
+
+        penalizacion_no_voluntario_noche=200,
+        penalizacion_no_respeto_preferencia=50
     )
 ):
     model: CpModel = CpModel()
@@ -203,6 +221,7 @@ def realizar_asignacion(
     pref_manana_asignados_a_manana: LinearExpr = LinearExpr.Sum(asignacion_preferencia_manana_a_manana)
     pref_tarde_asignados_a_tarde: LinearExpr = LinearExpr.Sum(asignacion_preferencia_tarde_a_tarde)
     jornadas_trabajadas_por_trabajador: dict[Trabajador, LinearExpr] = {}
+    dobles_por_trabajador: dict[Trabajador, IntVar] = {}
 
     for trabajador in trabajadores:
         trabajador_capacidades = trabajador.capacidades
@@ -227,6 +246,7 @@ def realizar_asignacion(
             # Forzamos a que la variable doble_jornada sea verdadera cuando se trabajan 2 jornadas, y falsa en otro caso.
             model.Add(total_jornadas_trabajadas == 2).OnlyEnforceIf(doble_jornada)
             model.Add(total_jornadas_trabajadas != 2).OnlyEnforceIf(doble_jornada.Not())
+            dobles_por_trabajador[trabajador] = doble_jornada
             # Un trabajador que dobla jornadas solo puede hacerlo en las que está permitido (las de mañana y tarde)
             # Luego si doble_jornada es cierto, trabajará 0 turnos en las jornadas en las que no se puede doblar.
             model.Add(LinearExpr.Sum([
@@ -247,11 +267,17 @@ def realizar_asignacion(
                 for trabajador in trabajadores
             ]) == demanda.get((puesto, jornada), 0))
 
-    puntuaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], int] = calcular_puntuacion(listas_preferencias, vars, parametros)
-    model.maximize(LinearExpr.sum([
-        puntuaciones[trabajador, puesto, jornada] * vars[trabajador, puesto, jornada]
-        for trabajador, puesto, jornada in vars
-    ]))
+    puntuaciones, dobles = calcular_puntuacion(listas_preferencias, vars, parametros)
+    model.maximize(LinearExpr.sum(
+        LinearExpr.sum([
+            puntuaciones[trabajador, puesto, jornada] * vars[trabajador, puesto, jornada]
+            for trabajador, puesto, jornada in vars
+        ]),
+        LinearExpr.sum([
+            dobles_por_trabajador.get(trabajador, 0) * dobles[trabajador]
+            for trabajador in voluntarios_doble
+        ])
+    ))
 
     solver: CpSolver = CpSolver()
     solver.parameters.num_search_workers = 8
@@ -334,7 +360,7 @@ def realizar_asignacion(
                 preferencia: str = 'P.MAÑANA' if trabajador in set_preferencia_manana else 'P.TARDE' if trabajador in set_preferencia_tarde else ''
                 voluntario_noche: str = 'V.NOCHE' if trabajador in set_voluntarios_noche else ''
                 voluntario_doble: str = 'V.DOBLE' if trabajador in set_voluntarios_doble else ''
-                puntuacion_por_asignacion: str = 'Punt: ' + str(puntuaciones[trabajador, puesto, jornada])
+                puntuacion_por_asignacion: str = 'Punt: ' + str(puntuaciones[trabajador, puesto, jornada] + solver.Value(dobles_por_trabajador.get(trabajador, 0) * dobles.get(trabajador, 0)))
                 print(
                     f"Trabajador {trabajador:<{3}} -> "
                     f"{puesto.nombre_es:<{21}} | "

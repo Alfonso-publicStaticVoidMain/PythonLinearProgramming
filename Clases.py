@@ -8,7 +8,6 @@ from datetime import date, datetime
 from typing import ClassVar, Type, TypeVar, Any, get_type_hints
 from enum import Enum
 
-
 T = TypeVar("T", bound="Identifiable")
 
 
@@ -145,7 +144,6 @@ class Identificable:
         """
         object.__setattr__(self, 'id', int(self.id))
 
-
     def __eq__(self: Identificable, other: object) -> bool:
         """
         Compara dos objetos, considerándolos iguales si el otro objeto es Identificable, es del mismo tipo que este, y
@@ -176,9 +174,10 @@ class Identificable:
         except (ValueError, TypeError) as e:
             print(id_, "cannot be converted to an integer")
             print(e)
+            return None
 
     @classmethod
-    def get_or_create(cls: Type[T], data: dict[str, Any]) -> T:
+    def get_or_create(cls: Type[T], data: dict[str, Any]) -> T | None:
         """
         Crea un nuevo objeto obteniendo los datos de un diccionario recibido como argumento, o si un objeto con ese
         ID ya existía, retorna ese objeto.
@@ -333,8 +332,16 @@ class Jornada(Enum):
     def jornadas_nocturnas(cls: Jornada) -> set[Jornada]:
         return {
             jornada
-            for jornada in Jornada # type: Jornada
+            for jornada in Jornada
             if jornada.tipo_jornada == TipoJornada.NOCHE
+        }
+
+    @classmethod
+    def jornadas_puede_doblar(cls: Jornada) -> set[Jornada]:
+        return {
+            jornada
+            for jornada in Jornada
+            if jornada.puede_doblar
         }
 
     @classmethod
