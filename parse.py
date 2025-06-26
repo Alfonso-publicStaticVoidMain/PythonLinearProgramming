@@ -96,7 +96,7 @@ def parse_excepciones() -> set[tuple[Trabajador, Jornada]]:
 
     return {
         (trabajador, jornada)
-        for trabajador, jornada in product(Trabajador.get_registro().values(), Jornada) # type: Trabajador, Jornada
+        for trabajador, jornada in product(Trabajador.get_registro().values(), Jornada)
         if (trabajador, jornada) not in set_excepciones_jornadas
         and trabajador not in set_excepciones_dias
     }
@@ -111,9 +111,9 @@ def parse_concesiones() -> tuple[
     for entry in concesiones_data: # type: dict[str, Any]
         if entry["TipoConcesion"]["nombre_es"] == "Voluntario Noche" or entry["TipoConcesion"]["nombre_es"] == "Voluntario Doble":
             trabajador = Trabajador.from_id(entry["TipoConcesionTrabajador"]["trabajador_id"])
-            if entry["TipoConcesion"]["nombre_es"] == "Voluntario Noche":
+            if entry["TipoConcesion"]["nombre_es"] == "Voluntario Noche" and trabajador not in lista_voluntarios_noche:
                 lista_voluntarios_noche.append(trabajador)
-            if entry["TipoConcesion"]["nombre_es"] == "Voluntario Doble":
+            if entry["TipoConcesion"]["nombre_es"] == "Voluntario Doble" and trabajador not in lista_voluntarios_doble:
                 lista_voluntarios_doble.append(trabajador)
     lista_voluntarios_doble.sort(key=get_codigo)
     lista_voluntarios_noche.sort(key=get_codigo)
