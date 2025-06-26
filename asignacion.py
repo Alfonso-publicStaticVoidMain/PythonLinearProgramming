@@ -1,11 +1,10 @@
-from collections import defaultdict
 from typing import NamedTuple
 
 from ortools.sat.cp_model_pb2 import CpSolverStatus
 from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import CpModel, IntVar, LinearExpr, CpSolver
 
-from Clases import Trabajador, PuestoTrabajo, Jornada, NivelDesempeno, TipoJornada
+from Clases import Trabajador, PuestoTrabajo, Jornada, TipoJornada
 from parse import data, DatosTrabajadoresPuestosJornadas, ListasPreferencias
 from SolutionHandler import SolutionHandler, soluciones
 
@@ -348,10 +347,10 @@ def realizar_asignacion(
                 )
 
         if verbose.asignacion_puestos:
-            for jornada in jornadas:  # type: Jornada
+            for jornada in jornadas:
                 print(f'\n{jornada.nombre_es.capitalize()}:\n')
 
-                for puesto in puestos:  # type: PuestoTrabajo
+                for puesto in puestos:
                     trabajadores_demandados: int = demanda.get((puesto, jornada), 0)
                     trabajadores_asignados_a_puesto_y_jornada: int = len(
                         {trabajador for trabajador, p, j in resultado if p == puesto and j == jornada})
@@ -362,7 +361,7 @@ def realizar_asignacion(
                     print(
                         f'{puesto.nombre_es} en jornada de {jornada.nombre_es} (demanda: {trabajadores_demandados}) asignado a {trabajadores_asignados_a_puesto_y_jornada} trabajadores:')
 
-                    for trabajador in trabajadores:  # type: Trabajador
+                    for trabajador in trabajadores:
                         if (trabajador, puesto, jornada) in resultado:
                             preferencia: str = 'P.MAÑANA' if trabajador in set_preferencia_manana else 'P.TARDE' if trabajador in set_preferencia_tarde else ''
                             voluntario_noche: str = 'V.NOCHE' if trabajador in set_voluntarios_noche else ''
