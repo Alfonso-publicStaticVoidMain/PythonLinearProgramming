@@ -2,6 +2,7 @@ from collections import defaultdict
 from typing import NamedTuple
 
 from ortools.sat.cp_model_pb2 import CpSolverStatus
+from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import CpModel, IntVar, LinearExpr, CpSolver
 
 from Clases import Trabajador, PuestoTrabajo, Jornada, NivelDesempeno, TipoJornada
@@ -69,7 +70,7 @@ def calcular_puntuacion(
     listas_preferencias: ListasPreferencias,
     vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar],
     parametros: ParametrosPuntuacion
-) -> LinearExpr:
+) -> dict[tuple[Trabajador, PuestoTrabajo, Jornada], int]:
     puntuaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], int] = {}
 
     especialidades, voluntarios_noche, voluntarios_doble, preferencia_manana, preferencia_tarde = listas_preferencias
@@ -115,10 +116,7 @@ def calcular_puntuacion(
 
         puntuaciones[trabajador, puesto, jornada] = coef_capacidad * puntuacion_capacidad + coef_especialidad * puntuacion_especialidad + coef_preferencia_jornada * puntuacion_jornada
 
-    return LinearExpr.sum([
-        puntuaciones[trabajador, puesto, jornada] * vars[trabajador, puesto, jornada]
-        for trabajador, puesto, jornada in vars
-    ])
+    return puntuaciones
 
 
 def realizar_asignacion(
@@ -202,7 +200,7 @@ def realizar_asignacion(
 
     num_trabajadores_disponibles: int = len({trabajador for (trabajador, puesto, jornada) in vars})
     total_asignaciones_especialidades: LinearExpr = LinearExpr.Sum(asignaciones_especialidades)
-    vol_noche_asignados_a_noche: LinearExpr = LinearExpr.Sum(asignacion_voluntario_noche_a_noche)
+    vol_noche_asignados_noche: LinearExpr = LinearExpr.Sum(asignacion_voluntario_noche_a_noche)
     pref_manana_asignados_a_manana: LinearExpr = LinearExpr.Sum(asignacion_preferencia_manana_a_manana)
     pref_tarde_asignados_a_tarde: LinearExpr = LinearExpr.Sum(asignacion_preferencia_tarde_a_tarde)
     jornadas_trabajadas_por_trabajador: dict[Trabajador, LinearExpr] = {}
@@ -250,19 +248,26 @@ def realizar_asignacion(
                 for trabajador in trabajadores
             ]) == demanda.get((puesto, jornada), 0))
 
-    model.maximize(calcular_puntuacion(listas_preferencias, vars, parametros))
+    puntuaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], int] = calcular_puntuacion(listas_preferencias, vars, parametros)
+    model.maximize(LinearExpr.sum([
+        puntuaciones[trabajador, puesto, jornada] * vars[trabajador, puesto, jornada]
+        for trabajador, puesto, jornada in vars
+    ]))
 
     solver: CpSolver = CpSolver()
     solver.parameters.num_search_workers = 8
     #solver.parameters.search_branching = cp_model.FIXED_SEARCH
-    solver.parameters.max_time_in_seconds = 180.0
-    solver.parameters.random_seed = 42
+    solver.parameters.max_time_in_seconds = 300.0
+    solver.parameters.random_seed = 108
     solver.parameters.use_lns = True
 
     status: CpSolverStatus = solver.solve(model, SolutionHandler(vars))
 
     if verbose.general:
-        print(f"Se encontraron {len(soluciones)} soluciones!\n")
+        if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+            print(f"Se encontraron {len(soluciones)} soluciones!\n")
+        else:
+            print(f"No se encontraron soluciones.")
 
     if verbose.estadisticas_avanzadas:
         print_estadisticas_avanzadas(solver, "Estadísticas avanzadas")
@@ -271,17 +276,6 @@ def realizar_asignacion(
     for resultado in soluciones:
         num_solucion += 1
         print(f"\nSolucion numero {num_solucion}:")
-
-        voluntarios_noche_asignados_a_noche: int = 0
-        preferencia_manana_asignados_a_manana: int = 0
-        preferencia_tarde_asignados_a_tarde: int = 0
-        for trabajador, puesto, jornada in resultado:
-            if jornada.tipo_jornada == TipoJornada.NOCHE and trabajador in set_voluntarios_noche:
-                voluntarios_noche_asignados_a_noche += 1
-            if jornada == Jornada.MANANA and trabajador in set_preferencia_manana:
-                preferencia_manana_asignados_a_manana += 1
-            if jornada == Jornada.TARDE and trabajador in set_preferencia_tarde:
-                preferencia_tarde_asignados_a_tarde += 1
 
         trabajadores_asignados_dobles: set[Trabajador] = {
             trabajador
@@ -298,52 +292,50 @@ def realizar_asignacion(
                 puestos_nocturnos_demandados += valor
             puestos_demandados += valor
 
-        numero_voluntarios_noche: int = len(voluntarios_noche)
-        numero_preferencia_manana: int = len(preferencia_manana)
-        numero_preferencia_tarde: int = len(preferencia_tarde)
-        asignaciones_especialidades_alcanzadas: int = solver.Value(total_asignaciones_especialidades)
-
         ultimo_codigo_asignado_por_especialidad: dict[PuestoTrabajo, int | None] = {
-            puesto: max({trabajador.codigo for (trabajador, puesto, _) in resultado if
-                         trabajador in sets_especialidades.get(puesto, {})}, default=None)
-            for puesto in puestos  # type: PuestoTrabajo
-        }
-
-        trabajadores_voluntarios_asignados_noche: set[Trabajador] = {
-            trabajador
-            for trabajador, _, jornada in resultado  # type: Trabajador, PuestoTrabajo, Jornada
-            if trabajador in set_voluntarios_noche and jornada.tipo_jornada == TipoJornada.NOCHE
+            puesto: max({trabajador.codigo for (trabajador, puesto, _) in resultado if trabajador in sets_especialidades.get(puesto, {})}, default=None)
+            for puesto in puestos
         }
 
         ultimo_codigo_voluntarios_noche: int | None = max({
             trabajador.codigo
-            for trabajador in trabajadores_voluntarios_asignados_noche
+            for trabajador, _, jornada in resultado
+            if trabajador in set_voluntarios_noche and jornada.tipo_jornada == TipoJornada.NOCHE
         }, default=None)
 
         ultimo_codigo_voluntarios_doble: int | None = max({
             trabajador.codigo
-            for trabajador in trabajadores_asignados_dobles  # type: Trabajador
+            for trabajador in trabajadores_asignados_dobles
         }, default=None)
 
         if verbose.general:
 
-            print(f"\nSe demandaron {puestos_nocturnos_demandados} puestos nocturnos y hay {numero_voluntarios_noche} voluntarios de noche.")
-            print(f"Se asignaron {voluntarios_noche_asignados_a_noche} de {numero_voluntarios_noche} ({100 * float(voluntarios_noche_asignados_a_noche) / numero_voluntarios_noche:.2f}%) voluntarios de noche a turnos de noche.\n")
+            num_voluntarios_noche: int = len(voluntarios_noche)
+            num_preferencia_manana: int = len(preferencia_manana)
+            num_preferencia_tarde: int = len(preferencia_tarde)
 
-            print(f"Se asignaron {preferencia_manana_asignados_a_manana} de {numero_preferencia_manana} ({100 * float(preferencia_manana_asignados_a_manana / numero_preferencia_manana):.2f}%) trabajadores con preferencia de mañana a turnos de mañana")
-            print(f"Se asignaron {preferencia_tarde_asignados_a_tarde} de {numero_preferencia_tarde} ({100 * float(preferencia_tarde_asignados_a_tarde / numero_preferencia_tarde):.2f}%) trabajadores con preferencia de tarde a turnos de tarde")
+            num_asignaciones_especialidad = solver.Value(total_asignaciones_especialidades)
+            num_vol_noche_asignados_noche = solver.Value(vol_noche_asignados_noche)
+            num_pref_manana_asignados_manana = solver.Value(pref_manana_asignados_a_manana)
+            num_pref_tarde_asignados_tarde = solver.Value(pref_tarde_asignados_a_tarde)
 
-            print(f'Número de asignaciones de especialidad alcanzado: {asignaciones_especialidades_alcanzadas} de {puestos_demandados} ({100 * asignaciones_especialidades_alcanzadas / puestos_demandados:.2f}%)')
+            print(f"\nSe demandaron {puestos_nocturnos_demandados} puestos nocturnos y hay {num_voluntarios_noche} voluntarios de noche.")
+            print(f"Se asignaron {num_vol_noche_asignados_noche} de {num_voluntarios_noche} ({100 * float(num_vol_noche_asignados_noche) / num_voluntarios_noche:.2f}%) voluntarios de noche a turnos de noche.")
+            print(f"Se asignaron {num_pref_manana_asignados_manana} de {num_preferencia_manana} ({100 * float(num_pref_manana_asignados_manana / num_preferencia_manana):.2f}%) trabajadores con preferencia de mañana a turnos de mañana")
+            print(f"Se asignaron {num_pref_tarde_asignados_tarde} de {num_preferencia_tarde} ({100 * float(num_pref_tarde_asignados_tarde / num_preferencia_tarde):.2f}%) trabajadores con preferencia de tarde a turnos de tarde")
+
+            print(f'Número de asignaciones de especialidad alcanzado: {num_asignaciones_especialidad} de {puestos_demandados} ({100 * num_asignaciones_especialidad / puestos_demandados:.2f}%)')
             print(f'Número de trabajadores asignados: {trabajadores_asignados} de {num_trabajadores_disponibles} ({100 * float(trabajadores_asignados) / num_trabajadores_disponibles:.2f}%)')
             print(f'Puntuación alcanzada: {int(solver.ObjectiveValue())}\n')
 
         if verbose.asignacion_trabajadores:
-            for trabajador, puesto, jornada in resultado:  # type: Trabajador, PuestoTrabajo, Jornada
+            for trabajador, puesto, jornada in resultado:
                 realiza_doble: str = 'DOBLE' if trabajador in trabajadores_asignados_dobles else ''
                 polivalencia: str = trabajador.capacidades[puesto].nombre_es
                 preferencia: str = 'P.MAÑANA' if trabajador in set_preferencia_manana else 'P.TARDE' if trabajador in set_preferencia_tarde else ''
                 voluntario_noche: str = 'V.NOCHE' if trabajador in set_voluntarios_noche else ''
                 voluntario_doble: str = 'V.DOBLE' if trabajador in set_voluntarios_doble else ''
+                puntuacion_por_asignacion: str = 'Punt: ' + str(puntuaciones[trabajador, puesto, jornada])
                 print(
                     f"Trabajador {trabajador:<{3}} -> "
                     f"{puesto.nombre_es:<{21}} | "
@@ -352,6 +344,7 @@ def realizar_asignacion(
                     f"{preferencia:<{10}}"
                     f"{voluntario_noche:<{10}}"
                     f"{voluntario_doble:<{10}}"
+                    f"{puntuacion_por_asignacion:<{7}}"
                 )
 
         if verbose.asignacion_puestos:
@@ -392,6 +385,6 @@ if __name__ == "__main__":
             general=True,
             estadisticas_avanzadas=True,
             asignacion_puestos=False,
-            asignacion_trabajadores=False
+            asignacion_trabajadores=True
         )
     )
