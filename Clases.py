@@ -124,13 +124,13 @@ class Identificable:
             for field_ in fields(cls):
                 if field_.name.startswith('_'):
                     continue
-                val_existing = getattr(existente, field_.name)
-                val_new = getattr(dummy, field_.name)
-                if val_existing != val_new:
+                valor_existente = getattr(existente, field_.name)
+                valor_nuevo = getattr(dummy, field_.name)
+                if valor_existente != valor_nuevo:
                     raise ValueError(
                         f"Conflicto con ID duplicado en id={id_} para la clase {cls.__name__}: "
                         f"El campo '{field_.name}' es distinto "
-                        f"(existente={val_existing!r}, nuevo={val_new!r})"
+                        f"(existente={valor_existente!r}, nuevo={valor_nuevo!r})"
                     )
             return existente
         else:
@@ -144,6 +144,7 @@ class Identificable:
         haber asignado un string.
         """
         object.__setattr__(self, 'id', int(self.id))
+
 
     def __eq__(self: Identificable, other: object) -> bool:
         """

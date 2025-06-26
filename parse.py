@@ -1,5 +1,5 @@
-from typing import TypeVar, Any
-from collections import defaultdict
+from typing import TypeVar, Any, NamedTuple
+from collections import defaultdict, namedtuple
 from itertools import product
 import json
 
@@ -19,6 +19,19 @@ def load_json_file(path: str) -> dict[str, Any] | None:
         print(f"JSON file not found: {e}")
     return None
 
+
+class DatosTrabajadoresPuestosJornadas(NamedTuple):
+    trabajadores: list[Trabajador]
+    puestos: list[PuestoTrabajo]
+    jornadas: list[Jornada]
+
+
+class ListasPreferencias(NamedTuple):
+    especialidades: dict[PuestoTrabajo, list[Trabajador]]
+    voluntarios_noche: list[Trabajador]
+    voluntarios_doble: list[Trabajador]
+    preferencia_manana: list[Trabajador]
+    preferencia_tarde: list[Trabajador]
 
 # Se cargan los archivos JSON conteniendo los datos de interés, que se guardan en un diccionario cada uno.
 puestos_data: dict[str, Any] = load_json_file("../data/trabajadore_puestos.json")
@@ -128,16 +141,10 @@ def parse_contratos():
 
 
 def parse_all_data() -> tuple[
-    list[Trabajador],       # Lista de trabajadores
-    list[PuestoTrabajo],    # Lista de puestos
-    list[Jornada],          # Lista de jornadas
+    DatosTrabajadoresPuestosJornadas,           # Lista de Trabajadores, Puestos y Jornadas
+    ListasPreferencias,                         # Listas de preferencias de especialidad, voluntarios de noche y dobles, mañana y tarde
     dict[tuple[PuestoTrabajo, Jornada], int],   # Demanda por cada puesto y jornada
-    dict[PuestoTrabajo, list[Trabajador]],      # Lista de trabajadores con cada puesto como especialidad
-    list[Trabajador],       # Voluntarios de noche
     set[tuple[Trabajador, Jornada]],            # Disponibilidad de los trabajadores en las distintas jornadas
-    list[Trabajador],       # Voluntarios para dobles
-    list[Trabajador],       # Preferencia de mañana
-    list[Trabajador]        # Preferencia de tarde
 ]:
     # No tocar el orden de los métodos llamados dentro de este método, o todo puede romperse.
     # Si, se que es mal diseño que ocurra eso, pero es lo que hay.
@@ -160,7 +167,7 @@ def parse_all_data() -> tuple[
     # Por defecto, parse_grupo1_2 retorna grupo1, grupo2.
     preferencia_manana, preferencia_tarde = parse_grupo1_2()
 
-    return trabajadores, puestos, jornadas, demandas, especialidades, voluntarios_noche, disponibilidad, voluntarios_doble, preferencia_manana, preferencia_tarde
+    return DatosTrabajadoresPuestosJornadas(trabajadores, puestos, jornadas), ListasPreferencias(especialidades, voluntarios_noche, voluntarios_doble, preferencia_manana, preferencia_tarde), demandas, disponibilidad
 
 
 data = parse_all_data()
