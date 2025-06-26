@@ -146,26 +146,15 @@ def parse_all_data() -> tuple[
     dict[tuple[PuestoTrabajo, Jornada], int],   # Demanda por cada puesto y jornada
     set[tuple[Trabajador, Jornada]],            # Disponibilidad de los trabajadores en las distintas jornadas
 ]:
-    # No tocar el orden de los métodos llamados dentro de este método, o todo puede romperse.
-    # Si, se que es mal diseño que ocurra eso, pero es lo que hay.
-
-    # Al ejecutarse el siguiente método se guardan en el registro los trabajadores y puestos que se encuentren en el
-    # JSON trabajadore_puestos.json. Por lo tanto las sentencias que utilicen el registro de estas clases deberán
-    # ejecutarse después, o lo encontrarán vacío.
-    especialidades: dict[PuestoTrabajo, list[Trabajador]] = parse_trabajadores_puestos()
-    # Deben estar después de parse_trabajadores_puestos
-    trabajadores: list[Trabajador] = parse_contratos() # list(Trabajador.get_registro().values())
-    puestos: list[PuestoTrabajo] = list(PuestoTrabajo.get_registro().values())
-    jornadas: list[Jornada] = list(Jornada)
-    # parse_demandas accede al registro de PuestoTrabajo
     demandas: dict[tuple[PuestoTrabajo, Jornada], int] = parse_demandas()
-    # parse_excepciones accede al registro de Trabajador
     disponibilidad = parse_excepciones()
     voluntarios_doble, voluntarios_noche = parse_concesiones()
-
-    # Intercambiar el orden de asignación de estas dos listas cambiará que grupo tiene preferencia de mañana o de tarde.
-    # Por defecto, parse_grupo1_2 retorna grupo1, grupo2.
     preferencia_manana, preferencia_tarde = parse_grupo1_2()
+    especialidades: dict[PuestoTrabajo, list[Trabajador]] = parse_trabajadores_puestos()
+
+    trabajadores: list[Trabajador] = parse_contratos()
+    puestos: list[PuestoTrabajo] = list(PuestoTrabajo.get_registro().values())
+    jornadas: list[Jornada] = list(Jornada)
 
     return DatosTrabajadoresPuestosJornadas(trabajadores, puestos, jornadas), ListasPreferencias(especialidades, voluntarios_noche, voluntarios_doble, preferencia_manana, preferencia_tarde), demandas, disponibilidad
 
