@@ -5,7 +5,7 @@ from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import CpModel, IntVar, LinearExpr, CpSolver
 
 from Clases import Trabajador, PuestoTrabajo, Jornada, TipoJornada
-from parse import data, DatosTrabajadoresPuestosJornadas, ListasPreferencias
+from parse import date, DatosTrabajadoresPuestosJornadas, ListasPreferencias
 from SolutionHandler import SolutionHandler, soluciones
 
 
@@ -335,9 +335,9 @@ def realizar_asignacion(
 
         if verbose.general:
 
-            num_voluntarios_noche: int = len(voluntarios_noche)
-            num_preferencia_manana: int = len(preferencia_manana)
-            num_preferencia_tarde: int = len(preferencia_tarde)
+            num_voluntarios_noche: int = len({trabajador for (trabajador, _, _) in vars if trabajador in set_voluntarios_noche})
+            num_preferencia_manana: int = len({trabajador for (trabajador, _, _) in vars if trabajador in set_preferencia_manana})
+            num_preferencia_tarde: int = len({trabajador for (trabajador, _, _) in vars if trabajador in set_preferencia_tarde})
 
             num_asignaciones_especialidad = solver.Value(total_asignaciones_especialidades)
             num_vol_noche_asignados_noche = solver.Value(vol_noche_asignados_noche)
@@ -357,18 +357,18 @@ def realizar_asignacion(
             for trabajador, puesto, jornada in resultado:
                 realiza_doble: str = 'DOBLE' if trabajador in trabajadores_asignados_dobles else ''
                 polivalencia: str = trabajador.capacidades[puesto].nombre_es
-                preferencia: str = 'P.MAÑANA' if trabajador in set_preferencia_manana else 'P.TARDE' if trabajador in set_preferencia_tarde else ''
-                voluntario_noche: str = 'V.NOCHE' if trabajador in set_voluntarios_noche else ''
-                voluntario_doble: str = 'V.DOBLE' if trabajador in set_voluntarios_doble else ''
+                preferencia: str = 'P.MAÑANA' + f' ({preferencia_manana.index(trabajador)})' if trabajador in set_preferencia_manana else 'P.TARDE' + f' ({preferencia_tarde.index(trabajador)})' if trabajador in set_preferencia_tarde else ''
+                voluntario_noche: str = 'V.NOCHE' + f' ({voluntarios_noche.index(trabajador)})' if trabajador in set_voluntarios_noche else ''
+                voluntario_doble: str = 'V.DOBLE' + f' ({voluntarios_doble.index(trabajador)})' if trabajador in set_voluntarios_doble else ''
                 puntuacion_por_asignacion: str = 'Punt: ' + str(puntuaciones[trabajador, puesto, jornada] + solver.Value(dobles_por_trabajador.get(trabajador, 0) * dobles.get(trabajador, 0)))
                 print(
                     f"Trabajador {trabajador:<{3}} -> "
                     f"{puesto.nombre_es:<{21}} | "
                     f"{jornada.nombre_es:<{10}} "
                     f"{realiza_doble:<{10}}{polivalencia:<{25}}"
-                    f"{preferencia:<{10}}"
-                    f"{voluntario_noche:<{10}}"
-                    f"{voluntario_doble:<{10}}"
+                    f"{preferencia:<{15}}"
+                    f"{voluntario_noche:<{15}}"
+                    f"{voluntario_doble:<{15}}"
                     f"{puntuacion_por_asignacion:<{7}}"
                 )
 
@@ -405,7 +405,7 @@ def realizar_asignacion(
 
 if __name__ == "__main__":
     realizar_asignacion(
-        *data,
+        *date,
         verbose=Verbose(
             general=True,
             estadisticas_avanzadas=True,
