@@ -89,7 +89,7 @@ def calcular_puntuacion(
     penalizacion_no_voluntario_noche, penalizacion_no_respeto_preferencia) = parametros
 
     for trabajador in voluntarios_doble:
-        dobles[trabajador] = coef_dobles * (max_dobles - decay_dobles * voluntarios_doble.index(trabajador))
+        dobles[trabajador] = max(0, coef_dobles * (max_dobles - decay_dobles * voluntarios_doble.index(trabajador)))
 
     for trabajador, puesto, jornada in vars:
 
@@ -190,8 +190,9 @@ def realizar_asignacion(
     # Se guardan las variables en un diccionario indexado por tuplas (trabajador, puesto, jornada)
     vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar] = {}
 
-    # Se crean listas de variables que representan ciertos tipos de asignaciones de las que luego nos interesará llevar
-    # cuenta de ellas.
+    # Se crean listas de variables que representan ciertos tipos de asignaciones con las que luego nos interesará
+    # realizar ciertos cálculos: las asignaciones de un trabajador a una de sus especialidades, de voluntarios de
+    # noche a turnos de noche y de preferencia de mañana o tarde a turnos de mañana o tarde respectivamente.
     asignaciones_especialidades: list[IntVar] = []
     asignacion_voluntario_noche_a_noche: list[IntVar] = []
     asignacion_preferencia_manana_a_manana: list[IntVar] = []
@@ -218,8 +219,8 @@ def realizar_asignacion(
     num_trabajadores_disponibles: int = len({trabajador for (trabajador, puesto, jornada) in vars})
     total_asignaciones_especialidades: LinearExpr = LinearExpr.Sum(asignaciones_especialidades)
     vol_noche_asignados_noche: LinearExpr = LinearExpr.Sum(asignacion_voluntario_noche_a_noche)
-    pref_manana_asignados_a_manana: LinearExpr = LinearExpr.Sum(asignacion_preferencia_manana_a_manana)
-    pref_tarde_asignados_a_tarde: LinearExpr = LinearExpr.Sum(asignacion_preferencia_tarde_a_tarde)
+    pref_manana_asignados_manana: LinearExpr = LinearExpr.Sum(asignacion_preferencia_manana_a_manana)
+    pref_tarde_asignados_tarde: LinearExpr = LinearExpr.Sum(asignacion_preferencia_tarde_a_tarde)
     jornadas_trabajadas_por_trabajador: dict[Trabajador, LinearExpr] = {}
     dobles_por_trabajador: dict[Trabajador, IntVar] = {}
 
@@ -304,7 +305,7 @@ def realizar_asignacion(
 
         trabajadores_asignados_dobles: set[Trabajador] = {
             trabajador
-            for trabajador in trabajadores
+            for trabajador, _, _ in resultado
             if solver.Value(jornadas_trabajadas_por_trabajador[trabajador]) == 2
         }
 
@@ -341,8 +342,8 @@ def realizar_asignacion(
 
             num_asignaciones_especialidad = solver.Value(total_asignaciones_especialidades)
             num_vol_noche_asignados_noche = solver.Value(vol_noche_asignados_noche)
-            num_pref_manana_asignados_manana = solver.Value(pref_manana_asignados_a_manana)
-            num_pref_tarde_asignados_tarde = solver.Value(pref_tarde_asignados_a_tarde)
+            num_pref_manana_asignados_manana = solver.Value(pref_manana_asignados_manana)
+            num_pref_tarde_asignados_tarde = solver.Value(pref_tarde_asignados_tarde)
 
             print(f"\nSe demandaron {puestos_nocturnos_demandados} puestos nocturnos y hay {num_voluntarios_noche} voluntarios de noche.")
             print(f"Se asignaron {num_vol_noche_asignados_noche} de {num_voluntarios_noche} ({100 * float(num_vol_noche_asignados_noche) / num_voluntarios_noche:.2f}%) voluntarios de noche a turnos de noche.")
