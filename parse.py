@@ -34,17 +34,17 @@ class ListasPreferencias(NamedTuple):
     preferencia_tarde: list[Trabajador]
 
 
-date: str = " " + "2025-05-05"
+data: str = " " + "2025-05-05"
 # Se cargan los archivos JSON conteniendo los datos de interés, que se guardan en un diccionario cada uno.
-puestos_data: dict[str, Any] = load_json_file("../data" + date + "/trabajadore_puestos.json")
-demandas_data: dict[str, Any] = load_json_file("../data" + date + "/demandas.json")
-voluntarios_data: dict[str, Any] = load_json_file("../data" + date + "/concesiones.json")
-excepciones_data: dict[str, Any] = load_json_file("../data" + date + "/excepciones_trabajadores.json")
-eventos_data: dict[str, Any] = load_json_file("../data" + date + "/eventos_trabajadores.json")
-jornadas_data: dict[str, Any] = load_json_file("../data" + date + "/jornadas.json")
-concesiones_data: dict[str, Any] = load_json_file("../data" + date + "/concesiones.json")
-grupos_data: dict[str, Any] = load_json_file("../data" + date + "/trabajadores_grupos_personales.json")
-contratos_data: dict[str, Any] = load_json_file("../data" + date + "/contratos.json")
+puestos_data: dict[str, Any] = load_json_file("../data" + data + "/trabajadore_puestos.json")
+demandas_data: dict[str, Any] = load_json_file("../data" + data + "/demandas.json")
+voluntarios_data: dict[str, Any] = load_json_file("../data" + data + "/concesiones.json")
+excepciones_data: dict[str, Any] = load_json_file("../data" + data + "/excepciones_trabajadores.json")
+eventos_data: dict[str, Any] = load_json_file("../data" + data + "/eventos_trabajadores.json")
+jornadas_data: dict[str, Any] = load_json_file("../data" + data + "/jornadas.json")
+concesiones_data: dict[str, Any] = load_json_file("../data" + data + "/concesiones.json")
+grupos_data: dict[str, Any] = load_json_file("../data" + data + "/trabajadores_grupos_personales.json")
+contratos_data: dict[str, Any] = load_json_file("../data" + data + "/contratos.json")
 
 
 def parse_trabajadores_puestos() -> dict[PuestoTrabajo, list[Trabajador]]:
@@ -161,4 +161,4 @@ def parse_all_data() -> tuple[
     return DatosTrabajadoresPuestosJornadas(trabajadores, puestos, jornadas), ListasPreferencias(especialidades, voluntarios_noche, voluntarios_doble, preferencia_manana, preferencia_tarde), demandas, disponibilidad
 
 
-date = parse_all_data()
+data = parse_all_data()
