@@ -5,10 +5,10 @@ from collections.abc import Iterable
 from dataclasses import Field
 from dataclasses import dataclass, field, is_dataclass, fields
 from datetime import date, datetime
-from typing import ClassVar, Type, TypeVar, Any, get_type_hints
+from typing import ClassVar, Type, TypeVar, Any, get_type_hints, Generic
 from enum import Enum
 
-T = TypeVar("T", bound="Identifiable")
+T = TypeVar("T", bound="Identificable")
 
 
 def parse_data_into(cls: Type[T], data: dict[str, Any]) -> T:
@@ -83,6 +83,36 @@ def get_by_id(
 def parse_bool(value: str | int) -> bool:
     return str(value).strip() in {'true', 'True', '1', 'yes', 'Yes', 'y', 'Y'}
 
+
+@dataclass
+class IdList:
+    id_list: list[int]
+    cls: type[Identificable] = field(default=None)
+
+    def __post_init__(self: IdList):
+        if not self.id_list:
+            if self.cls is None:
+                raise ValueError("No se puede inferir el tipo de la lista de una lista vacía.")
+            return
+
+        first = self.id_list[0]
+        if isinstance(first, Identificable):
+            if self.cls is None:
+                self.cls = type[first]
+            elif self.cls != type[first]:
+                raise ValueError("El tipo de la lista no coincide con el tipo declarado en el constructor.")
+
+            self.id_list = [item.id for item in self.id_list]
+
+        elif not isinstance(first, int):
+            raise ValueError("El primer elemento de la lista no es un identificable ni un id.")
+
+        for item in self.id_list:
+            if not isinstance(item, int):
+                raise ValueError(f"El elemento {item} no es un id.")
+
+    def get(self: IdList, index: int, fallback: T | None = None) -> T:
+        return self.cls.from_id(self.id_list[index]) or fallback
 
 @dataclass(eq=False, slots=True)
 class Identificable:
