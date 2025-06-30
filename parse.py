@@ -9,6 +9,7 @@ T = TypeVar('T')
 get_id = lambda p : p.id
 get_codigo = lambda t : t.codigo
 
+
 def load_json_file(path: str) -> dict[str, Any] | None:
     try:
         with open(path, "r", encoding="utf-8") as f:
