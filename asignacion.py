@@ -57,11 +57,11 @@ class ParametrosPuntuacion:
     """
 
     coef_especialidad: float | int = 1
-    max_especialidad: int = 100
+    max_especialidad: int = 300
     decay_especialidad: int = 1
 
     coef_capacidad: float | int = 1
-    max_capacidad: int = 50
+    max_capacidad: int = 100
     decay_capacidad: int = 10
 
     coef_voluntarios_noche: float | int = 1
@@ -69,14 +69,14 @@ class ParametrosPuntuacion:
     decay_voluntarios_noche: int = 1
 
     coef_voluntarios_doble: float | int = 1
-    max_voluntarios_doble: int = -500 # Este parámetro tiene un valor negativo para desincentivar que se asignen dobles
+    max_voluntarios_doble: int = -700 # Este parámetro tiene un valor negativo para desincentivar que se asignen dobles
     decay_voluntarios_doble: int = 1
 
     coef_preferencia_jornada: float | int = 1
-    max_preferencia_jornada: int = 100
+    max_preferencia_jornada: int = 300
     decay_preferencia_jornada: int = 1
 
-    penalizacion_no_voluntario_noche: int = 200
+    penalizacion_no_voluntario_noche: int = 500
     penalizacion_no_respeto_preferencia: int = 50
 
     def unpack(self: ParametrosPuntuacion) -> tuple:
