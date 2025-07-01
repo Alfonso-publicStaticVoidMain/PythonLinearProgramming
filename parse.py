@@ -3,7 +3,7 @@ from collections import defaultdict, namedtuple
 from itertools import product
 import json
 
-from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, parse_bool
+from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, parse_bool, TipoJornada
 
 T = TypeVar('T')
 get_id = lambda p : p.id
@@ -29,10 +29,8 @@ class DatosTrabajadoresPuestosJornadas(NamedTuple):
 
 class ListasPreferencias(NamedTuple):
     especialidades: dict[PuestoTrabajo, list[Trabajador]]
-    voluntarios_noche: list[Trabajador]
+    preferencias_jornada: dict[TipoJornada, list[Trabajador]]
     voluntarios_doble: list[Trabajador]
-    preferencia_manana: list[Trabajador]
-    preferencia_tarde: list[Trabajador]
 
 
 data: str = " " + "2025-05-05"
@@ -160,7 +158,12 @@ def parse_all_data(nombre_grupo_tarde: Grupo) -> tuple[
     disponibilidad = parse_excepciones()
     voluntarios_doble, voluntarios_noche = parse_concesiones()
     preferencia_manana, preferencia_tarde = parse_grupos(nombre_grupo_tarde)
-    return DatosTrabajadoresPuestosJornadas(trabajadores, puestos, jornadas), ListasPreferencias(especialidades, voluntarios_noche, voluntarios_doble, preferencia_manana, preferencia_tarde), demandas, disponibilidad
+    return (
+        DatosTrabajadoresPuestosJornadas(trabajadores, puestos, jornadas),
+        ListasPreferencias(especialidades, {TipoJornada.MANANA : preferencia_manana, TipoJornada.TARDE : preferencia_tarde, TipoJornada.NOCHE : voluntarios_noche}, voluntarios_doble),
+        demandas,
+        disponibilidad
+    )
 
 
 data = parse_all_data("Grupo1")
