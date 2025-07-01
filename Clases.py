@@ -89,7 +89,7 @@ class IdList:
     id_list: list[int]
     cls: type[Identificable] = field(default=None)
 
-    def __post_init__(self):
+    def __post_init__(self: IdList):
         if not self.id_list:
             if self.cls is None:
                 raise ValueError("No se puede inferir el tipo de la lista porque está vacía y no se proporcionó cls.")
