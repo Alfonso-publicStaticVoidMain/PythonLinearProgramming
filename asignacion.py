@@ -222,6 +222,7 @@ def realizar_asignacion(
     dobles_por_trabajador: dict[Trabajador, IntVar] = {}
 
     for trabajador in trabajadores:
+        # Se crea una expresión lineal que representa el total de jornadas trabajadas por el trabajador
         trabajador_capacidades = trabajador.capacidades
         total_jornadas_trabajadas: LinearExpr = LinearExpr.Sum([
             vars.get((trabajador, puesto, jornada), 0)
@@ -388,10 +389,12 @@ def realizar_asignacion(
 
 
     if verbose.asignacion_puestos:
-        for jornada in jornadas:
-            print(f'\n{jornada.nombre_es.capitalize()}:\n')
+        if verbose.asignacion_trabajadores:
+            print("\n\n")
 
-            for puesto in puestos:
+        for puesto in puestos:
+            print(f'{puesto.nombre_es}:')
+            for jornada in jornadas:
                 trabajadores_demandados: int = demanda.get((puesto, jornada), 0)
                 trabajadores_asignados_a_puesto_y_jornada: int = len(
                     {trabajador for trabajador, p, j in resultado if p == puesto and j == jornada})
@@ -399,24 +402,27 @@ def realizar_asignacion(
                     print('**********************************************')
                     print(f'{puesto} en jornada {jornada}: MISMATCH!!!!')
                     print('**********************************************')
-                print(
-                    f'{puesto.nombre_es} en jornada de {jornada.nombre_es} (demanda: {trabajadores_demandados}) asignado a {trabajadores_asignados_a_puesto_y_jornada} trabajadores:')
+                if trabajadores_demandados != 0:
+                    print('\t' f'{jornada.nombre_es} (demanda: {trabajadores_demandados}) asignado a {trabajadores_asignados_a_puesto_y_jornada} trabajadores:')
 
-                for trabajador in trabajadores:
-                    if (trabajador, puesto, jornada) in resultado:
-                        preferencia: str = 'P.MAÑANA' if trabajador in set_preferencia_manana else 'P.TARDE' if trabajador in set_preferencia_tarde else ''
-                        voluntario_noche: str = 'V.NOCHE' if trabajador in set_voluntarios_noche else ''
-                        print(
-                            f'\tTrabajador {trabajador:<10}'
-                            f'\t{trabajador.capacidades[puesto].nombre_es:<10}'
-                            f'\t{preferencia:<10}'
-                            f'\t{voluntario_noche:<10}'
-                        )
-                        for p, nivel in trabajador.capacidades.items():
-                            print("\t\t", end="")
-                            puesto_info: str = f'{p.nombre_es} ({nivel.nombre_es})'
-                            print(f'{puesto_info:<15}', end="")
-                        print(end="\n")
+                    for trabajador in trabajadores:
+                        if (trabajador, puesto, jornada) in resultado:
+                            preferencia: str = 'P.MAÑANA' if trabajador in set_preferencia_manana else 'P.TARDE' if trabajador in set_preferencia_tarde else ''
+                            voluntario_noche: str = 'V.NOCHE' if trabajador in set_voluntarios_noche else ''
+                            info_puesto: str = f'{puesto.nombre_es} | {trabajador.capacidades[puesto].nombre_es}' + (f' ({especialidades[puesto].index(trabajador)})' if trabajador in sets_especialidades[puesto] else '')
+                            print(
+                                f'\t\tTrabajador {trabajador:<10}'
+                                f' -> {"":<5}'
+                                f'{info_puesto:<40}'
+                                f'{preferencia:<15}'
+                                f'{voluntario_noche:<15}'
+                            )
+
+                            for p in trabajador.especialidades:
+                                print("\t\t\t", end="")
+                                puesto_info: str = f'{p.nombre_es}: {especialidades[p].index(trabajador)}'
+                                print(f'{puesto_info:<15}')
+
     return resultado
 
 
@@ -451,7 +457,7 @@ if __name__ == "__main__":
         verbose=Verbose(
             general=True,
             estadisticas_avanzadas=True,
-            asignacion_puestos=False,
+            asignacion_puestos=True,
             asignacion_trabajadores=True
         )
     )

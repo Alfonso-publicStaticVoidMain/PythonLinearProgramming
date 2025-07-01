@@ -1,9 +1,9 @@
-from typing import TypeVar, Any, NamedTuple, Literal
+from typing import TypeVar, Any, NamedTuple
 from collections import defaultdict, namedtuple
 from itertools import product
 import json
 
-from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, parse_bool
+from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, parse_bool, IdList
 
 T = TypeVar('T')
 get_id = lambda p : p.id
@@ -52,7 +52,7 @@ def parse_trabajadores_puestos() -> dict[PuestoTrabajo, list[Trabajador]]:
     # Se van a devolver un diccionario indexado por tuplas (trabajador, puesto), mapeándolas a un objeto NivelDesempeno,
     # que representa la eficacia del trabajador en ese puesto, siendo un ID de 1 su especialidad principal, y un
     # diccionario indexado por PuestoTrabajo que mapea a una lista de los trabajadores que tienen esa especialidad.
-    dict_especialidades: dict[PuestoTrabajo, list[Trabajador]] = defaultdict(list)
+    dict_especialidades: dict[PuestoTrabajo, list[Trabajador] | IdList] = defaultdict(list)
     for entry in puestos_data: # type: dict[str, Any]
         # Se parsea la información del JSON en un objeto de Trabajador, PuestoTrabajo y NivelDesempeno
         trabajador: Trabajador = Trabajador.get_or_create(entry["Trabajador"])
@@ -64,8 +64,9 @@ def parse_trabajadores_puestos() -> dict[PuestoTrabajo, list[Trabajador]]:
         # Si el ID del NivelDesempeno es 1, es una especialidad, así que se actualizan las listas apropiadas.
         if nivel.id == 1:
             dict_especialidades[puesto].append(trabajador)
-    for lista_especialidades in dict_especialidades.values(): # type: list[Trabajador]
+    for puesto, lista_especialidades in dict_especialidades.items():
         lista_especialidades.sort(key=get_codigo)
+        dict_especialidades[puesto] = IdList(lista_especialidades, PuestoTrabajo)
     return dict_especialidades
 
 
@@ -123,18 +124,17 @@ def parse_concesiones() -> tuple[
     return lista_voluntarios_doble, lista_voluntarios_noche
 
 
-Grupo = Literal["Grupo1", "Grupo2", "Grupo3", "Grupo4"]
-def parse_grupos(nombre_grupo_tarde: Grupo):
-    grupo_manana: list[Trabajador] = []
-    grupo_tarde: list[Trabajador] = []
+def parse_grupo1_2():
+    grupo1: list[Trabajador] = []
+    grupo2: list[Trabajador] = []
     for entry in grupos_data: # type: dict[str, Any]
-        if entry["GrupoPersonal"]["nombre_es"] == nombre_grupo_tarde:
-            grupo_tarde.append(Trabajador.get_or_create(entry["Trabajador"]))
-        else:
-            grupo_manana.append(Trabajador.get_or_create(entry["Trabajador"]))
-    grupo_manana.sort(key=get_codigo)
-    grupo_tarde.sort(key=get_codigo)
-    return grupo_manana, grupo_tarde
+        if entry["GrupoPersonal"]["nombre_es"] == "Grupo1":
+            grupo1.append(Trabajador.get_or_create(entry["Trabajador"]))
+        elif entry["GrupoPersonal"]["nombre_es"] == "Grupo2":
+            grupo2.append(Trabajador.get_or_create(entry["Trabajador"]))
+    grupo1.sort(key=get_codigo)
+    grupo2.sort(key=get_codigo)
+    return grupo1, grupo2
 
 
 def parse_contratos():
@@ -146,7 +146,7 @@ def parse_contratos():
     return lista_trabajadores
 
 
-def parse_all_data(nombre_grupo_tarde: Grupo) -> tuple[
+def parse_all_data() -> tuple[
     DatosTrabajadoresPuestosJornadas,           # Lista de Trabajadores, Puestos y Jornadas
     ListasPreferencias,                         # Listas de preferencias de especialidad, voluntarios de noche y dobles, mañana y tarde
     dict[tuple[PuestoTrabajo, Jornada], int],   # Demanda por cada puesto y jornada
@@ -159,8 +159,8 @@ def parse_all_data(nombre_grupo_tarde: Grupo) -> tuple[
     demandas: dict[tuple[PuestoTrabajo, Jornada], int] = parse_demandas()
     disponibilidad = parse_excepciones()
     voluntarios_doble, voluntarios_noche = parse_concesiones()
-    preferencia_manana, preferencia_tarde = parse_grupos(nombre_grupo_tarde)
+    preferencia_manana, preferencia_tarde = parse_grupo1_2()
     return DatosTrabajadoresPuestosJornadas(trabajadores, puestos, jornadas), ListasPreferencias(especialidades, voluntarios_noche, voluntarios_doble, preferencia_manana, preferencia_tarde), demandas, disponibilidad
 
 
-data = parse_all_data("Grupo1")
+data = parse_all_data()

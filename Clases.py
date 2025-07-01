@@ -89,30 +89,74 @@ class IdList:
     id_list: list[int]
     cls: type[Identificable] = field(default=None)
 
-    def __post_init__(self: IdList):
+    def __post_init__(self):
         if not self.id_list:
             if self.cls is None:
-                raise ValueError("No se puede inferir el tipo de la lista de una lista vacía.")
+                raise ValueError("No se puede inferir el tipo de la lista porque está vacía y no se proporcionó cls.")
+            elif self.cls is not int and not issubclass(self.cls, Identificable):
+                raise ValueError(f"El tipo {self.cls} no es una subclase válida de Identificable.")
             return
 
-        first = self.id_list[0]
-        if isinstance(first, Identificable):
-            if self.cls is None:
-                self.cls = type[first]
-            elif self.cls != type[first]:
-                raise ValueError("El tipo de la lista no coincide con el tipo declarado en el constructor.")
+        inferred_cls = None
 
-            self.id_list = [item.id for item in self.id_list]
+        for i in range(len(self.id_list)):
+            item = self.id_list[i]
 
-        elif not isinstance(first, int):
-            raise ValueError("El primer elemento de la lista no es un identificable ni un id.")
+            if isinstance(item, Identificable):
+                if inferred_cls is None:
+                    inferred_cls = type(item)
+                elif not isinstance(item, inferred_cls):
+                    raise ValueError(f"Todos los objetos deben ser del mismo tipo Identificable ({inferred_cls}).")
+                self.id_list[i] = item.id
 
-        for item in self.id_list:
-            if not isinstance(item, int):
-                raise ValueError(f"El elemento {item} no es un id.")
+            elif isinstance(item, int):
+                if item < 0:
+                    raise ValueError(f"ID inválido {item}: debe ser un entero positivo.")
 
-    def get(self: IdList, index: int, fallback: T | None = None) -> T:
-        return self.cls.from_id(self.id_list[index]) or fallback
+            elif isinstance(item, str):
+                try:
+                    int_value = int(item)
+                    if int_value < 0:
+                        raise ValueError()
+                    self.id_list[i] = int_value
+                except ValueError:
+                    raise ValueError(f"El string '{item}' no representa un ID entero válido.")
+            else:
+                raise TypeError(f"Elemento inválido en la lista: {item} (tipo {type(item)})")
+
+        if self.cls is None:
+            if inferred_cls is None:
+                raise ValueError("No se pudo inferir el tipo cls a partir de la lista.")
+            self.cls = inferred_cls
+
+        elif self.cls is not int and not issubclass(self.cls, Identificable):
+            raise ValueError(f"El tipo {self.cls} no es una subclase válida de Identificable.")
+
+        elif inferred_cls is not None and not issubclass(inferred_cls, self.cls):
+            raise ValueError(f"Los elementos de la lista no coinciden con el tipo declarado {self.cls}.")
+
+        registro = self.cls.get_registro()
+        for id in self.id_list:
+            if id not in registro:
+                raise ValueError(f"{id} no está presente en el registro de la clase {self.cls}")
+
+    def get(self: IdList, index: int, fallback: T | None = None) -> T | None:
+        try:
+            value: T = self.cls.from_id(self.id_list[index])
+            return value or fallback
+        except IndexError:
+            return None
+
+    def append(self: IdList, element: T | int | str):
+        try:
+            element = int(element)
+        except ValueError:
+            raise ValueError(f"{element} no se puede convertir a un entero.")
+
+        if element not in self.cls.get_registro():
+            raise ValueError(f"El elemento con id {element} no está presente en el registro de la clase {self.cls}")
+        self.id_list.append(element)
+
 
 @dataclass(eq=False, slots=True)
 class Identificable:
@@ -173,6 +217,9 @@ class Identificable:
         haber asignado un string.
         """
         object.__setattr__(self, 'id', int(self.id))
+
+    def __int__(self: Identificable):
+        return self.id
 
     def __eq__(self: Identificable, other: object) -> bool:
         """
@@ -455,46 +502,12 @@ class TrabajadorContrato(Identificable):
             object.__setattr__(self, 'fecha_fin', datetime.strptime(self.fecha_fin, "%Y-%m-%d").date())
         super(TrabajadorContrato, self).__post_init__()
 
-def test_trabajador_registry():
-    print("Creating Trabajadores manually:")
-    t1 = Trabajador(id=1, nombre="Alice", apellidos="Smith", codigo=1)
-    t2 = Trabajador(id=2, nombre="Bob", apellidos="Jones", codigo=2)
-    print(t1, t2)
-
-    print("Registry contents:")
-    for obj_id, obj in Trabajador.get_registro().items():
-        print(f"ID {obj_id}: {obj}")
-
-    print("Fetching from registry by id:")
-    assert Trabajador.from_id(1) is t1
-    assert Trabajador.from_id(2) is t2
-
-    print("Using get_or_create_from with new data:")
-    t3 = Trabajador.get_or_create({"id":3, "nombre":"Carol", "apellidos":"White", "codigo":"3"})
-    print(t3)
-    assert Trabajador.from_id(3) is t3
-
-    print("Using get_or_create_from with existing id:")
-    t1_again = Trabajador.get_or_create({"id":1, "nombre":"ShouldNotChange", "apellidos":"Name", "codigo":"1"})
-    print(t1_again)
-    assert t1_again is t1  # No overwrite
-
-    print("Using get_or_create with new data:")
-    t4 = Trabajador.get_or_create({"id":4, "nombre":"David", "apellidos":"Green", "codigo":"4"})
-    print(t4)
-    assert Trabajador.from_id(4) is t4
-
-    print("Using get_or_create with existing id:")
-    t2_again = Trabajador.get_or_create({"id":2, "nombre":"NewName", "apellidos":"LastName", "codigo":"2"})
-    print(t2_again)
-    assert t2_again is t2
-
-    print("Registry contents:")
-    for obj_id, obj in Trabajador.get_registro().items():
-        print(f"ID {obj_id}: {obj}")
-
-    print("All tests passed!")
-
 
 if __name__ == "__main__":
-    test_trabajador_registry()
+    t1: Trabajador = Trabajador(id=1, nombre="Alfonso", apellidos="Gallego", codigo=5000)
+    t2: Trabajador = Trabajador(id=2, nombre="Pepito", apellidos="Pérez", codigo=5001)
+    t3: Trabajador = Trabajador(id=3, nombre="María", apellidos="Gómez", codigo=5002)
+
+    lista_de_ids: IdList = IdList(id_list=[t1, t2, 3], cls=Trabajador)
+    print(lista_de_ids.id_list)
+    print(lista_de_ids.get(2).nombre)
