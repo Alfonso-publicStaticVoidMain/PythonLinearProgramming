@@ -6,7 +6,7 @@ from ortools.sat.cp_model_pb2 import CpSolverStatus
 from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import CpModel, IntVar, LinearExpr, CpSolver
 
-from AuxiliaryClasses import ListasPreferencias, ParametrosPuntuacion, Verbose, DatosTrabajadoresPuestosJornadas
+from ClasesAuxiliares import ListasPreferencias, ParametrosPuntuacion, Verbose, DatosTrabajadoresPuestosJornadas
 from Clases import Trabajador, PuestoTrabajo, Jornada, TipoJornada
 from parse import data
 
@@ -221,6 +221,7 @@ def realizar_asignacion(
     dobles: dict[Trabajador, int]
     puntuaciones, dobles = calcular_puntuacion(listas_preferencias, vars, parametros)
 
+    # Se maximiza la puntuación obtenida por las asignaciones mas las asignaciones a dobles.
     model.Maximize(LinearExpr.Sum(
         LinearExpr.Sum([
             puntuaciones[trabajador, puesto, jornada] * vars[trabajador, puesto, jornada]
@@ -270,7 +271,7 @@ def realizar_asignacion(
 
     puestos_demandados: int = 0
     puestos_demandados_por_jornada: dict[TipoJornada, int] = defaultdict(lambda:0)
-    for (_, jornada), valor in demanda.items():  # type: tuple[PuestoTrabajo, Jornada], int
+    for (_, jornada), valor in demanda.items():
         puestos_demandados += valor
         if jornada in Jornada.jornadas_con_preferencia():
             puestos_demandados_por_jornada[jornada.tipo_jornada] += valor
@@ -306,7 +307,7 @@ def realizar_asignacion(
         print(f"{'Mañana':<10} | {puestos_demandados_manana:<20} | {num_preferencia_manana}")
         print(f"{'Tarde':<10} | {puestos_demandados_tarde:<20} | {num_preferencia_tarde}")
         print(f"{'Noche':<10} | {puestos_demandados_noche:<20} | {num_voluntarios_noche}")
-        print("*" * 60)
+        print("-" * 60)
         print(f"{'Voluntarios dobles':<33} | {num_voluntarios_dobles}")
 
         #print(f"Se demandaron {puestos_demandados_manana} puestos de mañana, {puestos_demandados_tarde} puestos de tarde y {puestos_demandados_noche} puestos nocturnos.")

@@ -35,14 +35,14 @@ def parse_data_into(cls: Type[T], data: dict[str, Any]) -> T:
     type_hints: dict[str, Any] = get_type_hints(cls)
     field_names_and_types: dict[str, Any] = {
         field.name : type_hints[field.name]
-        for field in fields(cls) # type: Field
+        for field in fields(cls)
     }
     filtered_data: dict[str, Any] = {}
-    for k, v in data.items(): # type: str, Any
+    for k, v in data.items():
         if k in field_names_and_types:
             filtered_data[k] = v
         else:
-            for field_name, field_type in field_names_and_types.items(): # type: str, Any
+            for field_name, field_type in field_names_and_types.items():
                 if is_dataclass(field_type) and field_type.__name__ == k:
                     filtered_data[field_name] = parse_data_into(field_type, v)
                     break

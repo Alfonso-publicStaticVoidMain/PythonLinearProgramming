@@ -10,7 +10,7 @@ from ortools.sat.cp_model_pb2 import CpSolverStatus
 from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import CpModel, IntVar, LinearExpr, CpSolver
 
-from AuxiliaryClasses import ParametrosPuntuacion
+from ClasesAuxiliares import ParametrosPuntuacion
 from Clases import Trabajador, PuestoTrabajo, Jornada, TipoJornada
 from parse import data, DatosTrabajadoresPuestosJornadas, ListasPreferencias
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import NamedTuple
-
 from frozendict import frozendict
 
 from Clases import TipoJornada, Jornada, PuestoTrabajo, Trabajador
@@ -71,13 +70,13 @@ class ParametrosPuntuacion:
     max_capacidad: int = 50
     decay_capacidad: int = 10
 
-    max_voluntarios_doble: int = -700 # Este parámetro tiene un valor negativo para desincentivar que se asignen dobles
+    max_voluntarios_doble: int = -1000 # Este parámetro tiene un valor negativo para desincentivar que se asignen dobles
     decay_voluntarios_doble: int = 1
 
     max_preferencia_por_jornada: frozendict[TipoJornada, int] = frozendict({
         TipoJornada.MANANA : 300,
-        TipoJornada.TARDE : 400,
-        TipoJornada.NOCHE : 500,
+        TipoJornada.TARDE : 500,
+        TipoJornada.NOCHE : 700,
     })
 
     decay_preferencia_por_jornada: frozendict[TipoJornada, int] = frozendict({
