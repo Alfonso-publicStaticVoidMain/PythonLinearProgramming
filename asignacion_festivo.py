@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from itertools import product
 from typing import NamedTuple
 from frozendict import frozendict
 
@@ -9,6 +10,7 @@ from ortools.sat.cp_model_pb2 import CpSolverStatus
 from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import CpModel, IntVar, LinearExpr, CpSolver
 
+from AuxiliaryClasses import ParametrosPuntuacion
 from Clases import Trabajador, PuestoTrabajo, Jornada, TipoJornada
 from parse import data, DatosTrabajadoresPuestosJornadas, ListasPreferencias
 
@@ -48,53 +50,6 @@ class Verbose(NamedTuple):
     asignacion_puestos: bool
 
 
-@dataclass(frozen=True, slots=True)
-class ParametrosPuntuacion:
-    """
-    Clase para encapsular los parámetros que se van a utilizar en el cálculo de la función objetivo a maximizar por
-    el modelo. Sus prefijos denotan el comportamiento que van a desempeñar en ese cálculo:
-    <ul>
-        <li>max: El máximo de puntuación que se puede asignar a esa categoría, previa multiplicación del coeficiente.</li>
-        <li>decay: Decaimiento por cada posición que se aleja de la posición de máxima prioridad de la lista apropiada.</li>
-    </ul>
-    """
-
-    max_especialidad: int = 500
-    decay_especialidad: int = 5
-
-    max_capacidad: int = 50
-    decay_capacidad: int = 10
-
-    max_voluntarios_doble: int = -700 # Este parámetro tiene un valor negativo para desincentivar que se asignen dobles
-    decay_voluntarios_doble: int = 1
-
-    max_preferencia_por_jornada: frozendict[TipoJornada, int] = frozendict({
-        TipoJornada.MANANA : 300,
-        TipoJornada.TARDE : 400,
-        TipoJornada.NOCHE : 500,
-    })
-
-    decay_preferencia_por_jornada: frozendict[Jornada, int] = frozendict({
-        TipoJornada.MANANA: 1,
-        TipoJornada.TARDE: 1,
-        TipoJornada.NOCHE: 1,
-    })
-
-    penalizacion_por_jornada: frozendict[Jornada, int] = frozendict({
-        TipoJornada.MANANA: 0,
-        TipoJornada.TARDE: 50,
-        TipoJornada.NOCHE: 500,
-    })
-
-    def unpack(self: ParametrosPuntuacion) -> tuple:
-        return (
-            self.max_especialidad, self.decay_especialidad,
-            self.max_capacidad, self.decay_capacidad,
-            self.max_voluntarios_doble, self.decay_voluntarios_doble,
-            self.max_preferencia_por_jornada, self.decay_preferencia_por_jornada, self.penalizacion_por_jornada
-        )
-
-
 def distancia(a: tuple[Dia, Jornada], b: tuple[Dia, Jornada]) -> int | None:
     dia1, jornada1 = a
     dia2, jornada2 = b
@@ -113,46 +68,23 @@ def distancia(a: tuple[Dia, Jornada], b: tuple[Dia, Jornada]) -> int | None:
 
 def calcular_puntuacion(
     dias: list[Dia],
-    listas_preferencias: ListasPreferencias,
+    voluntarios_doble: list[Trabajador],
     vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar],
     parametros: ParametrosPuntuacion
 ) -> tuple[dict[tuple[Trabajador, PuestoTrabajo, Jornada], int], dict[Trabajador, float | int]]:
     puntuaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], float | int] = {}
     dobles: dict[Trabajador, float | int] = {}
 
-    especialidades, preferencia_por_jornada, voluntarios_doble = listas_preferencias
-
     (
-        max_especialidad, decay_especialidad,
         max_capacidad, decay_capacidad,
         max_voluntarios_doble, decay_voluntarios_doble,
-        max_preferencia_por_jornada, decay_preferencia_por_jornada, penalizacion_por_jornada
-    ) = parametros.unpack()
+    ) = parametros.unpack_festivo()
 
     for trabajador in voluntarios_doble:
         dobles[trabajador] = max_voluntarios_doble - decay_voluntarios_doble * voluntarios_doble.index(trabajador)
 
     for trabajador, puesto, jornada in vars:
-
-        # Puntuación por capacidad.
-        puntuacion_capacidad: int = max(0, max_capacidad - decay_capacidad * (trabajador.capacidades[puesto].id - 1))
-
-        # Puntuación por estar más alto en las listas de especialidades.
-        puntuacion_especialidad: int = 0
-        especialistas_puesto: list[Trabajador] = especialidades.get(puesto, [])
-        if trabajador in especialistas_puesto:
-            puntuacion_especialidad = max(0, max_especialidad - decay_especialidad * especialistas_puesto.index(trabajador))
-
-        # Puntuación por preferencia de jornada o penalización por no ser voluntario para noche
-        puntuacion_jornada: int = 0
-        if jornada in [Jornada.MANANA, Jornada.TARDE, Jornada.NOCHE1, Jornada.NOCHE2]:
-            tipo_jornada = jornada.tipo_jornada
-            if trabajador in preferencia_por_jornada[tipo_jornada]:
-                puntuacion_jornada += max_preferencia_por_jornada[tipo_jornada] - decay_preferencia_por_jornada[tipo_jornada] * preferencia_por_jornada[tipo_jornada].index(trabajador)
-            else:
-                puntuacion_jornada -= penalizacion_por_jornada[tipo_jornada]
-
-        puntuaciones[trabajador, puesto, jornada] = puntuacion_capacidad + puntuacion_especialidad + puntuacion_jornada
+        puntuaciones[trabajador, puesto, jornada] = max(0, max_capacidad - decay_capacidad * trabajador.capacidades[puesto].id - 1)
 
     return puntuaciones, dobles
 
@@ -174,22 +106,38 @@ def realizar_asignacion_festivo(
     model: CpModel = CpModel()
 
     trabajadores, puestos, jornadas = datos
+    trabajadores.sort(key=lambda t : t.codigo)
 
     # Se precomputan varios sets para comprobaciones de membresía más rápidas.
     # No se pueden recibir los datos como sets directamente porque el orden es importante para otras cosas.
     set_voluntarios_doble: set[Trabajador] = set(voluntarios_doble)
 
     # Se guardan las variables en un diccionario indexado por tuplas (trabajador, puesto, jornada)
-    vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar] = {}
+    vars: dict[tuple[Trabajador, PuestoTrabajo, Dia, Jornada], IntVar] = {}
 
     for trabajador in trabajadores:
         for puesto in puestos:
-            for jornada in jornadas:
-                # Solo se crean variables para las asignaciones permitidas, es decir, en las que el trabajador es
-                # capaz de realizar el puesto y está disponible para esa jornada. Por lo tanto, se debe usar
-                # vars.get((trabajador, puesto, jornada), 0) en vez de vars[trabajador, puesto, jornada].
-                if puesto in trabajador.capacidades and (trabajador, jornada) in disponibilidad:
-                    vars[trabajador, puesto, jornada] = model.NewBoolVar(f'x_{trabajador}_{puesto}_{jornada}')
+            for dia in dias:
+                for jornada in jornadas:
+                    # Solo se crean variables para las asignaciones permitidas, es decir, en las que el trabajador es
+                    # capaz de realizar el puesto y está disponible para esa jornada. Por lo tanto, se debe usar
+                    # vars.get((trabajador, puesto, jornada), 0) en vez de vars[trabajador, puesto, jornada].
+                    if puesto in trabajador.capacidades and (trabajador, dia, jornada) in disponibilidad:
+                        vars[trabajador, puesto, dia, jornada] = model.NewBoolVar(f'x_{trabajador}_{puesto}_{jornada}')
+
+    dia_jornada_prohibidos: set[tuple[tuple[Dia, Jornada], tuple[Dia, Jornada]]] = set()
+    for dia1, jornada1 in product(dias, jornadas):
+        for dia2, jornada2 in product(dias, jornadas):
+            if (dia1, jornada1) >= (dia2, jornada2):
+                continue # Ignoramos si (dia2, jornada2) es anterior a (dia1, jornada1) para establecer un orden en las tuplas.
+
+            d = distancia((dia1, jornada1), (dia2, jornada2))
+            if d is None:
+                continue  # Ignorar las jornadas partidas.
+
+            # Permitimos solo si es el típico doble de (mañana, tarde) en el mismo día
+            if d < 3 and not (dia1 == dia2 and jornada1.nombre_es == "MANANA" and jornada2.nombre_es == "TARDE"):
+                dia_jornada_prohibidos.add(((dia1, jornada1), (dia2, jornada2)))
 
     set_trabajadores_disponibles = {trabajador for (trabajador, _, _) in vars}
     num_trabajadores_disponibles: int = len(set_trabajadores_disponibles)
@@ -249,7 +197,7 @@ def realizar_asignacion_festivo(
     # Obtenemos de un método auxiliar los coeficientes a aplicar para calcular la puntuación de una asignación concreta
     puntuaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], int]
     dobles: dict[Trabajador, int]
-    puntuaciones, dobles = calcular_puntuacion(listas_preferencias, vars, parametros)
+    puntuaciones, dobles = calcular_puntuacion(dias, voluntarios_doble, vars, parametros)
     model.Maximize(LinearExpr.Sum(
         LinearExpr.Sum([
             puntuaciones[trabajador, puesto, jornada] * vars[trabajador, puesto, jornada]
@@ -301,11 +249,6 @@ def realizar_asignacion_festivo(
         puestos_demandados += valor
         if jornada in {Jornada.MANANA, Jornada.TARDE, Jornada.NOCHE1, Jornada.NOCHE2}:
             puestos_demandados_por_jornada[jornada.tipo_jornada] += valor
-
-    ultimo_codigo_asignado_por_especialidad: dict[PuestoTrabajo, int | None] = {
-        puesto: max({trabajador.codigo for (trabajador, puesto, _) in resultado if trabajador in sets_especialidades.get(puesto, {})}, default=None)
-        for puesto in puestos
-    }
 
     ultimo_codigo_voluntarios_doble: int | None = max({
         trabajador.codigo

@@ -3,6 +3,7 @@ from collections import defaultdict, namedtuple
 from itertools import product
 import json
 
+from AuxiliaryClasses import DatosTrabajadoresPuestosJornadas, ListasPreferencias
 from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, parse_bool, TipoJornada
 
 T = TypeVar('T')
@@ -19,18 +20,6 @@ def load_json_file(path: str) -> dict[str, Any] | None:
     except FileNotFoundError as e:
         print(f"JSON file not found: {e}")
     return None
-
-
-class DatosTrabajadoresPuestosJornadas(NamedTuple):
-    trabajadores: list[Trabajador]
-    puestos: list[PuestoTrabajo]
-    jornadas: list[Jornada]
-
-
-class ListasPreferencias(NamedTuple):
-    especialidades: dict[PuestoTrabajo, list[Trabajador]]
-    preferencias_jornada: dict[TipoJornada, list[Trabajador]]
-    voluntarios_doble: list[Trabajador]
 
 
 data: str = " " + "2025-05-05"

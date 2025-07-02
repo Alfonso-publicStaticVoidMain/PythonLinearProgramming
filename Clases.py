@@ -405,6 +405,26 @@ class Jornada(Enum):
     def __str__(self: Jornada) -> str:
         return f"{self.nombre_es} ({self.tipo_jornada})"
 
+    def __lt__(self: Jornada, other: Jornada) -> bool:
+        if not isinstance(other, Jornada):
+            return NotImplemented
+        return self.id < other.id
+
+    def __le__(self: Jornada, other: Jornada) -> bool:
+        if not isinstance(other, Jornada):
+            return NotImplemented
+        return self.id <= other.id
+
+    def __gt__(self: Jornada, other: Jornada) -> bool:
+        if not isinstance(other, Jornada):
+            return NotImplemented
+        return self.id > other.id
+
+    def __ge__(self: Jornada, other: Jornada) -> bool:
+        if not isinstance(other, Jornada):
+            return NotImplemented
+        return self.id >= other.id
+
     @classmethod
     def jornadas_nocturnas(cls: Jornada) -> set[Jornada]:
         return {
@@ -420,6 +440,10 @@ class Jornada(Enum):
             for jornada in Jornada
             if jornada.puede_doblar
         }
+
+    @classmethod
+    def jornadas_con_preferencia(cls: Jornada) -> set[Jornada]:
+        return {Jornada.MANANA, Jornada.TARDE, Jornada.NOCHE1, Jornada.NOCHE2}
 
     @classmethod
     def from_id(cls: Type[Jornada], id_: int | str) -> Jornada | None:
