@@ -69,7 +69,7 @@ def distancia(a: tuple[Dia, Jornada], b: tuple[Dia, Jornada]) -> int | None:
 def calcular_puntuacion(
     dias: list[Dia],
     voluntarios_doble: list[Trabajador],
-    vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar],
+    vars: dict[tuple[Trabajador, PuestoTrabajo, Dia, Jornada], IntVar],
     parametros: ParametrosPuntuacion
 ) -> tuple[dict[tuple[Trabajador, PuestoTrabajo, Jornada], int], dict[Trabajador, float | int]]:
     puntuaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], float | int] = {}
@@ -116,28 +116,36 @@ def realizar_asignacion_festivo(
     vars: dict[tuple[Trabajador, PuestoTrabajo, Dia, Jornada], IntVar] = {}
 
     for trabajador in trabajadores:
-        for puesto in puestos:
+        for puesto in trabajador.capacidades:
             for dia in dias:
                 for jornada in jornadas:
                     # Solo se crean variables para las asignaciones permitidas, es decir, en las que el trabajador es
                     # capaz de realizar el puesto y está disponible para esa jornada. Por lo tanto, se debe usar
                     # vars.get((trabajador, puesto, jornada), 0) en vez de vars[trabajador, puesto, jornada].
-                    if puesto in trabajador.capacidades and (trabajador, dia, jornada) in disponibilidad:
+                    if (trabajador, dia, jornada) in disponibilidad:
                         vars[trabajador, puesto, dia, jornada] = model.NewBoolVar(f'x_{trabajador}_{puesto}_{jornada}')
 
-    dia_jornada_prohibidos: set[tuple[tuple[Dia, Jornada], tuple[Dia, Jornada]]] = set()
-    for dia1, jornada1 in product(dias, jornadas):
-        for dia2, jornada2 in product(dias, jornadas):
-            if (dia1, jornada1) >= (dia2, jornada2):
-                continue # Ignoramos si (dia2, jornada2) es anterior a (dia1, jornada1) para establecer un orden en las tuplas.
+    # Se guarda en un set todos los pares de pares (día, jornada) que no están permitidos porque no respetan el descanso.
+    combinaciones_prohibidas, combinaciones_dobles_usuales = dia_jornada_prohibidos_y_dobles(dias, jornadas)
+    for (dia1, jornada1), (dia2, jornada2) in combinaciones_prohibidas:
+        for trabajador in trabajadores:
+            for puesto in trabajador.capacidades:
+                if (trabajador, puesto, dia2, jornada2) in vars and (trabajador, puesto, dia1, jornada1) in vars:
+                    # Si el trabajador trabaja en (dia1, jornada1), entonces no podrá trabajar en (dia2, jornada2)
+                    # y viceversa.
+                    model.Add(vars[trabajador, puesto, dia2, jornada2] == 0).OnlyEnforceIf(vars[trabajador, puesto, dia1, jornada1])
+                    model.Add(vars[trabajador, puesto, dia1, jornada1] == 0).OnlyEnforceIf(vars[trabajador, puesto, dia2, jornada2])
 
-            d = distancia((dia1, jornada1), (dia2, jornada2))
-            if d is None:
-                continue  # Ignorar las jornadas partidas.
 
-            # Permitimos solo si es el típico doble de (mañana, tarde) en el mismo día
-            if d < 3 and not (dia1 == dia2 and jornada1.nombre_es == "MANANA" and jornada2.nombre_es == "TARDE"):
-                dia_jornada_prohibidos.add(((dia1, jornada1), (dia2, jornada2)))
+    for (dia1, jornada1), (dia2, jornada2) in combinaciones_dobles_usuales:
+        for trabajador in trabajadores - voluntarios_doble:
+            for puesto in trabajador.capacidades:
+                if (trabajador, puesto, dia2, jornada2) in vars and (trabajador, puesto, dia1, jornada1) in vars:
+                    # Los trabajadores que no están en la lista de dobles no podrán trabajar en pares (día, jornada) que
+                    # representen jornadas dobles usuales.
+                    model.Add(vars[trabajador, puesto, dia2, jornada2] == 0).OnlyEnforceIf(vars[trabajador, puesto, dia1, jornada1])
+                    model.Add(vars[trabajador, puesto, dia1, jornada1] == 0).OnlyEnforceIf(vars[trabajador, puesto, dia2, jornada2])
+
 
     set_trabajadores_disponibles = {trabajador for (trabajador, _, _) in vars}
     num_trabajadores_disponibles: int = len(set_trabajadores_disponibles)
@@ -149,50 +157,21 @@ def realizar_asignacion_festivo(
         # Se crea una expresión lineal que representa el total de jornadas trabajadas por el trabajador
         trabajador_capacidades = trabajador.capacidades
         total_jornadas_trabajadas: LinearExpr = LinearExpr.Sum([
-            vars.get((trabajador, puesto, jornada), 0)
+            vars.get((trabajador, puesto, dia, jornada), 0)
             for puesto in trabajador_capacidades
+            for dia in dias
             for jornada in jornadas
         ])
         jornadas_trabajadas_por_trabajador[trabajador] = total_jornadas_trabajadas
 
-        if trabajador in set_voluntarios_doble:
-            # Cada trabajador voluntario para dobles puede trabajar a lo sumo 2 jornadas.
-            model.Add(total_jornadas_trabajadas <= 2)
-
-            for jornada in jornadas:
-                # Cada trabajador solo puede desempeñar un puesto en cada jornada, no se puede dividir en dos.
-                model.Add(LinearExpr.Sum([
-                    vars.get((trabajador, puesto, jornada), 0)
-                    for puesto in trabajador_capacidades
-                ]) <= 1)
-
-            # Se crea una variable nueva para representar si el trabajador en el que estamos actualmente iterando
-            # realiza o no una jornada doble. Nótese que solo hacemos esto para los que son voluntarios para dobles.
-            doble_jornada: IntVar = model.NewBoolVar(f'doble_jornada_{trabajador}')
-            # Forzamos a que la variable doble_jornada sea verdadera cuando se trabajan 2 jornadas, y falsa en otro caso.
-            model.Add(total_jornadas_trabajadas == 2).OnlyEnforceIf(doble_jornada)
-            model.Add(total_jornadas_trabajadas != 2).OnlyEnforceIf(doble_jornada.Not())
-            dobles_por_trabajador[trabajador] = doble_jornada
-            # Un trabajador que dobla jornadas solo puede hacerlo en las que está permitido (las de mañana y tarde)
-            # Luego si doble_jornada es cierto, trabajará 0 turnos en las jornadas en las que no se puede doblar.
-            model.Add(LinearExpr.Sum([
-                vars.get((trabajador, puesto, jornada), 0)
-                for puesto in trabajador_capacidades
-                for jornada in jornadas
-                if not jornada.puede_doblar
-            ]) == 0).OnlyEnforceIf(doble_jornada)
-
-        else:
-            # Si el trabajador no es voluntario para doble, solo podrá trabajar 1 jornada, sin más complicaciones.
-            model.Add(total_jornadas_trabajadas <= 1)
-
     # Cada jornada debe cubrir su demanda.
     for puesto in puestos:
-        for jornada in jornadas:
-            model.Add(LinearExpr.Sum([
-                vars.get((trabajador, puesto, jornada), 0)
-                for trabajador in trabajadores
-            ]) == demanda.get((puesto, jornada), 0))
+        for dia in dias:
+            for jornada in jornadas:
+                model.Add(LinearExpr.Sum([
+                    vars.get((trabajador, puesto, dia, jornada), 0)
+                    for trabajador in trabajadores
+                ]) == demanda.get((puesto, dia, jornada), 0))
 
     # Obtenemos de un método auxiliar los coeficientes a aplicar para calcular la puntuación de una asignación concreta
     puntuaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], int]
@@ -200,8 +179,8 @@ def realizar_asignacion_festivo(
     puntuaciones, dobles = calcular_puntuacion(dias, voluntarios_doble, vars, parametros)
     model.Maximize(LinearExpr.Sum(
         LinearExpr.Sum([
-            puntuaciones[trabajador, puesto, jornada] * vars[trabajador, puesto, jornada]
-            for trabajador, puesto, jornada in vars
+            puntuaciones[trabajador, puesto, jornada] * vars[trabajador, puesto, dia, jornada]
+            for trabajador, puesto, dia, jornada in vars
         ]),
         LinearExpr.Sum([
             dobles_por_trabajador[trabajador] * dobles[trabajador]
@@ -337,29 +316,28 @@ def realizar_asignacion_festivo(
     return resultado
 
 
-def comparar_asignaciones(
-    asignacion1: set[tuple[Trabajador, PuestoTrabajo, Jornada]],
-    asignacion2: set[tuple[Trabajador, PuestoTrabajo, Jornada]],
-) -> None:
-    trabajadores_que_no_coinciden: set[Trabajador] = {
-        trabajador
-        for (trabajador, _, _) in asignacion1 ^ asignacion2 # Diferencia simétrica de conjuntos
-    }
-    dict_asignacion1: dict[Trabajador, tuple[PuestoTrabajo, Jornada]] = {
-        trabajador : (puesto, jornada)
-        for (trabajador, puesto, jornada) in asignacion1
-    }
-    dict_asignacion2: dict[Trabajador, tuple[PuestoTrabajo, Jornada]] = {
-        trabajador : (puesto, jornada)
-        for (trabajador, puesto, jornada) in asignacion2
-    }
-    print(f"Hay {len(trabajadores_que_no_coinciden)} trabajadores que no coinciden.")
-    print(f"{'Solo en asignación 1':<45} | {'Solo en asignación 2':<45}")
-    print('-' * 85)
-    for trabajador in trabajadores_que_no_coinciden:
-        col1: str = f"{trabajador}, {dict_asignacion1[trabajador][0].nombre_es}, {dict_asignacion1[trabajador][1].nombre_es}" if trabajador in dict_asignacion1 else f"{trabajador.codigo} no asignado."
-        col2: str = f"{trabajador}, {dict_asignacion2[trabajador][0].nombre_es}, {dict_asignacion2[trabajador][1].nombre_es}" if trabajador in dict_asignacion2 else f"{trabajador.codigo} no asignado."
-        print(f"{col1:<45} | {col2:<45}")
+def dia_jornada_prohibidos_y_dobles(
+    dias: list[Dia],
+    jornadas: set[Jornada] | list[Jornada]
+) -> tuple[
+    set[tuple[tuple[Dia, Jornada], tuple[Dia, Jornada]]], # dia_jornada_prohibidos
+    set[tuple[tuple[Dia, Jornada], tuple[Dia, Jornada]]]  # dia_jornada_dobles
+]:
+    dia_jornada_prohibidos: set[tuple[tuple[Dia, Jornada], tuple[Dia, Jornada]]] = set()
+    dia_jornada_dobles: set[tuple[tuple[Dia, Jornada], tuple[Dia, Jornada]]] = set()
+    for dia1, jornada1 in product(dias, jornadas):
+        for dia2, jornada2 in product(dias, jornadas):
+            if (dia1, jornada1) >= (dia2, jornada2):
+                continue  # Ignoramos si (dia2, jornada2) es anterior a (dia1, jornada1) para establecer un orden en las tuplas.
+
+            d = distancia((dia1, jornada1), (dia2, jornada2))
+            if d is None:
+                continue  # Ignorar las jornadas partidas.
+            if dia1 == dia2 and jornada1.nombre_es == "MANANA" and jornada2.nombre_es == "TARDE":
+                dia_jornada_dobles.add(((dia1, jornada1), (dia2, jornada2)))
+            elif d < 3:
+                dia_jornada_prohibidos.add(((dia1, jornada1), (dia2, jornada2)))
+    return dia_jornada_prohibidos, dia_jornada_dobles
 
 
 if __name__ == "__main__":

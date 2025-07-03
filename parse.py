@@ -57,16 +57,13 @@ def parse_trabajadores_puestos() -> dict[PuestoTrabajo, list[Trabajador]]:
 
 
 def parse_demandas() -> dict[tuple[PuestoTrabajo, Jornada], int]:
-    demandas: dict[tuple[PuestoTrabajo, Jornada], int] = {}
+    demandas: dict[tuple[PuestoTrabajo, Jornada], int] = defaultdict(lambda:0)
     for entry in demandas_data: # type: dict[str, Any]
         if entry["DemandasPuestosTrabajos"]:
             jornada = Jornada.from_id(int(entry["Demanda"]["jornada_id"]))
             for demanda_puestos in entry["DemandasPuestosTrabajos"]: # type: dict[str, Any]
                 puesto = PuestoTrabajo.from_id(demanda_puestos["puesto_trabajo_id"])
-                if (puesto, jornada) in demandas:
-                    demandas[puesto, jornada] += int(demanda_puestos["num_trabajadores"])
-                else:
-                    demandas[puesto, jornada] = int(demanda_puestos["num_trabajadores"])
+                demandas[puesto, jornada] += int(demanda_puestos["num_trabajadores"])
     return demandas
 
 
