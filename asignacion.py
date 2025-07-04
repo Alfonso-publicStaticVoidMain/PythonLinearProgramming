@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from typing import NamedTuple
 
 from ortools.sat.cp_model_pb2 import CpSolverStatus
 from ortools.sat.python import cp_model
@@ -9,6 +10,13 @@ from ortools.sat.python.cp_model import CpModel, IntVar, LinearExpr, CpSolver
 from ClasesAuxiliares import ListasPreferencias, ParametrosPuntuacion, Verbose, DatosTrabajadoresPuestosJornadas
 from Clases import Trabajador, PuestoTrabajo, Jornada, TipoJornada, NivelDesempeno
 from parse import data
+
+
+class Asignacion(NamedTuple):
+    trabajador: Trabajador
+    puesto: PuestoTrabajo
+    jornada: Jornada
+    var: IntVar
 
 
 def formatear_float(
@@ -53,7 +61,7 @@ def print_estadisticas_avanzadas(solver: CpSolver, mensaje: str = ""):
     print(f"Ramas: {solver.NumBranches()}\n")
 
 
-def calcular_puntuacion(
+def calcular_coeficientes_puntuacion(
     listas_preferencias: ListasPreferencias,
     vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar],
     parametros: ParametrosPuntuacion
@@ -61,8 +69,8 @@ def calcular_puntuacion(
     dict[tuple[Trabajador, PuestoTrabajo, Jornada], int], # (trabajador, puesto, jornada) -> puntuación por realizar esta asignación
     dict[Trabajador, int] # trabajador -> puntuación por asignar a este trabajador a dobles
 ]:
-    puntuaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], int] = {}
-    dobles: dict[Trabajador, int] = {}
+    coeficientes_asignaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], int] = {}
+    coeficientes_dobles: dict[Trabajador, int] = {}
 
     especialidades, preferencia_por_jornada, voluntarios_doble = listas_preferencias
 
@@ -74,10 +82,9 @@ def calcular_puntuacion(
     ) = parametros.unpack()
 
     for trabajador in voluntarios_doble:
-        dobles[trabajador] = max_voluntarios_doble - decay_voluntarios_doble * voluntarios_doble.index(trabajador)
+        coeficientes_dobles[trabajador] = max_voluntarios_doble - decay_voluntarios_doble * voluntarios_doble.index(trabajador)
 
     for trabajador, puesto, jornada in vars:
-
         # Puntuación por capacidad.
         puntuacion_capacidad: int = max(0, max_capacidad - decay_capacidad * (trabajador.capacidades[puesto].id - 1))
 
@@ -96,9 +103,9 @@ def calcular_puntuacion(
             else:
                 puntuacion_jornada -= penalizacion_por_jornada[tipo_jornada]
 
-        puntuaciones[trabajador, puesto, jornada] = puntuacion_capacidad + puntuacion_especialidad + puntuacion_jornada
+        coeficientes_asignaciones[trabajador, puesto, jornada] = puntuacion_capacidad + puntuacion_especialidad + puntuacion_jornada
 
-    return puntuaciones, dobles
+    return coeficientes_asignaciones, coeficientes_dobles
 
 
 def realizar_asignacion(
@@ -218,7 +225,7 @@ def realizar_asignacion(
     # Obtenemos de un método auxiliar los coeficientes a aplicar para calcular la puntuación de una asignación concreta
     coeficientes_asignaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], int]
     coeficientes_dobles: dict[Trabajador, int]
-    coeficientes_asignaciones, coeficientes_dobles = calcular_puntuacion(listas_preferencias, vars, parametros)
+    coeficientes_asignaciones, coeficientes_dobles = calcular_coeficientes_puntuacion(listas_preferencias, vars, parametros)
 
     puntuacion_asignaciones: LinearExpr = LinearExpr.Sum([
         coeficientes_asignaciones[trabajador, puesto, jornada] * vars[trabajador, puesto, jornada]
@@ -323,7 +330,7 @@ def realizar_asignacion(
         print(f"{'Tarde':<10} | {puestos_demandados_tarde:<20} | {num_preferencia_tarde}")
         print(f"{'Noche':<10} | {puestos_demandados_noche:<20} | {num_voluntarios_noche}")
         print("-" * 60)
-        print(f"{'Voluntarios dobles':<33} | {num_voluntarios_dobles}")
+        print(f"{'Dobles':<10} | {'*':<20} | {num_voluntarios_dobles}")
 
         #print(f"Se demandaron {puestos_demandados_manana} puestos de mañana, {puestos_demandados_tarde} puestos de tarde y {puestos_demandados_noche} puestos nocturnos.")
         #print(f"Hay {num_preferencia_manana} trabajadores con preferencia de mañana, {num_preferencia_tarde} con preferencia de tarde, {num_voluntarios_noche} voluntarios de noche y {num_voluntarios_dobles} voluntarios de coeficientes_dobles.")

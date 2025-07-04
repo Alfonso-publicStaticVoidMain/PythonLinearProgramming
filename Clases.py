@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
-from dataclasses import Field
 from dataclasses import dataclass, field, is_dataclass, fields
 from datetime import date, datetime
 from typing import ClassVar, Type, TypeVar, Any, get_type_hints, Generic
@@ -149,7 +148,7 @@ class IdList:
 
     def append(self: IdList, element: T | int | str):
         try:
-            element = int(element)
+            element = int(element) # Aplicar int() a un Identificable devuelve su id.
         except ValueError:
             raise ValueError(f"{element} no se puede convertir a un entero.")
 
@@ -157,8 +156,15 @@ class IdList:
             raise ValueError(f"El elemento con id {element} no está presente en el registro de la clase {self.cls}")
         self.id_list.append(element)
 
+    def remove(self: IdList, element: T | int | str):
+        try:
+            element = int(element) # Aplicar int() a un Identificable devuelve su id.
+            self.id_list.remove(element)
+        except ValueError:
+            return
 
-@dataclass(eq=False, slots=True)
+
+@dataclass(eq=False, slots=True, frozen=True)
 class Identificable:
     """
     Clase que actúa como superclase para todas las clases que se quiera que hereden un atributo id: int que las
@@ -189,7 +195,7 @@ class Identificable:
         existente = registro.get(id_)
 
         if existente is not None:
-            # Create a temporary dummy to compare attributes
+            # Crea un objeto dummy para comparar atributos
             dummy = super(Identificable, cls).__new__(cls)
             object.__setattr__(dummy, 'id', id_)
             dummy.__init__(*args, **kwargs)
@@ -218,27 +224,11 @@ class Identificable:
         """
         object.__setattr__(self, 'id', int(self.id))
 
-    def __int__(self: Identificable):
-        return self.id
-
-    def __eq__(self: Identificable, other: object) -> bool:
-        """
-        Compara dos objetos, considerándolos iguales si el otro objeto es Identificable, es del mismo tipo que este, y
-        tiene el mismo ID.
-        """
-        return isinstance(other, Identificable) and type(self) is type(other) and self.id == other.id
-
-    def __hash__(self: Identificable) -> int:
-        """
-        Crea el hash del objeto teniendo en cuenta su tipo y su ID.
-        """
-        return hash((type(self), self.id))
-
     def __format__(self: Trabajador, format_spec: str) -> str:
         return format(str(self), format_spec)
 
     @classmethod
-    def from_id(cls: Type[T], id_: int | float | str) -> T | None:
+    def from_id(cls: type[T], id_: int | float | str) -> T | None:
         """
         Busca y retorna un objeto con el ID deseado, o None si no se encuentra.
         :param id_: ID del objeto a buscar.
@@ -249,7 +239,7 @@ class Identificable:
             id_int = int(id_)
             return cls.get_registro().get(id_int)
         except (ValueError, TypeError) as e:
-            print(id_, "cannot be converted to an integer")
+            print(id_, "no se puede convertir a un entero.")
             print(e)
             return None
 
@@ -266,8 +256,24 @@ class Identificable:
         """
         return cls.from_id(data["id"]) or parse_data_into(cls, data)
 
+    def __int__(self: Identificable) -> int:
+        return self.id
 
-@dataclass(eq=False, slots=True)
+    def __eq__(self: Identificable, other: object) -> bool:
+        """
+        Compara dos objetos, considerándolos iguales si el otro objeto es Identificable, es del mismo tipo que este, y
+        tiene el mismo ID.
+        """
+        return isinstance(other, Identificable) and type(self) is type(other) and self.id == other.id
+
+    def __hash__(self: Identificable) -> int:
+        """
+        Crea el hash del objeto teniendo en cuenta su tipo y su ID.
+        """
+        return hash((type(self), self.id))
+
+
+@dataclass(eq=False, slots=True, frozen=True)
 class Trabajador(Identificable):
     nombre: str
     apellidos: str
@@ -298,7 +304,7 @@ class Trabajador(Identificable):
         return f'Trabajador {self.id} - {self.nombre} {self.apellidos}'
 
 
-@dataclass(eq=False, slots=True)
+@dataclass(eq=False, slots=True, frozen=True)
 class PuestoTrabajo(Identificable):
     nombre_es: str
 
@@ -312,7 +318,7 @@ class PuestoTrabajo(Identificable):
         return f'PuestoTrabajo(id={self.id} {self.nombre_es})'
 
 
-@dataclass(eq=False, slots=True)
+@dataclass(eq=False, slots=True, frozen=True)
 class NivelDesempeno(Identificable):
     nombre_es: str
 
@@ -326,7 +332,7 @@ class NivelDesempeno(Identificable):
         return f'NivelDesempeno({self.id}, {self.nombre_es})'
 
 
-@dataclass(eq=False, slots=True)
+@dataclass(eq=False, slots=True, frozen=True)
 class TrabajadorPuestoTrabajo(Identificable):
     trabajador: Trabajador
     puesto_trabajo: PuestoTrabajo
@@ -458,7 +464,7 @@ class Jornada(Enum):
             return None
 
 
-@dataclass(eq=False, slots=True)
+@dataclass(eq=False, slots=True, frozen=True)
 class Demanda(Identificable):
     fecha: date
     jornada_id: int
@@ -484,7 +490,7 @@ class Demanda(Identificable):
         super(Demanda, self).__post_init__()
 
 
-@dataclass(eq=False, slots=True)
+@dataclass(eq=False, slots=True, frozen=True)
 class DemandasPuestosTrabajos(Identificable):
     num_trabajadores: int
     puesto_trabajo_id: int
@@ -502,12 +508,16 @@ class DemandasPuestosTrabajos(Identificable):
         if self not in puestos_demandados: puestos_demandados.add(self)
         super(DemandasPuestosTrabajos, self).__post_init__()
 
+
+@dataclass(eq=False, slots=True, frozen=True)
 class Contrato(Identificable):
     nombre_es: int
 
     def __post_init__(self: Contrato) -> None:
         super(Contrato, self).__post_init__()
 
+
+@dataclass(eq=False, slots=True, frozen=True)
 class TrabajadorContrato(Identificable):
     trabajador_id: int
     trabajador: Trabajador
