@@ -1,22 +1,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import NamedTuple
 
 from ortools.sat.cp_model_pb2 import CpSolverStatus
 from ortools.sat.python import cp_model
 from ortools.sat.python.cp_model import CpModel, IntVar, LinearExpr, CpSolver
 
-from ClasesAuxiliares import ListasPreferencias, ParametrosPuntuacion, Verbose, DatosTrabajadoresPuestosJornadas
+from ClasesAuxiliares import ListasPreferencias, ParametrosPuntuacion, Verbose, DatosTrabajadoresPuestosJornadas, Asignacion
 from Clases import Trabajador, PuestoTrabajo, Jornada, TipoJornada, NivelDesempeno
 from parse import data
-
-
-class Asignacion(NamedTuple):
-    trabajador: Trabajador
-    puesto: PuestoTrabajo
-    jornada: Jornada
-    var: IntVar
 
 
 def formatear_float(
@@ -62,8 +54,10 @@ def print_estadisticas_avanzadas(solver: CpSolver, mensaje: str = ""):
 
 
 def calcular_coeficientes_puntuacion(
+    trabajadores: list[Trabajador],
+    jornadas: set[Jornada],
+    disponibilidad: set[tuple[Trabajador, Jornada]],
     listas_preferencias: ListasPreferencias,
-    vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar],
     parametros: ParametrosPuntuacion
 ) -> tuple[
     dict[tuple[Trabajador, PuestoTrabajo, Jornada], int], # (trabajador, puesto, jornada) -> puntuación por realizar esta asignación
@@ -84,26 +78,29 @@ def calcular_coeficientes_puntuacion(
     for trabajador in voluntarios_doble:
         coeficientes_dobles[trabajador] = max_voluntarios_doble - decay_voluntarios_doble * voluntarios_doble.index(trabajador)
 
-    for trabajador, puesto, jornada in vars:
-        # Puntuación por capacidad.
-        puntuacion_capacidad: int = max(0, max_capacidad - decay_capacidad * (trabajador.capacidades[puesto].id - 1))
+    for trabajador in trabajadores:
+        for puesto in trabajador.capacidades:
+            for jornada in jornadas:
+                if (trabajador, jornada) in disponibilidad:
+                    # Puntuación por capacidad.
+                    puntuacion_capacidad: int = max(0, max_capacidad - decay_capacidad * (trabajador.capacidades[puesto].id - 1))
 
-        # Puntuación por estar más alto en las listas de especialidades.
-        puntuacion_especialidad: int = 0
-        especialistas_puesto: list[Trabajador] = especialidades.get(puesto, [])
-        if trabajador in especialistas_puesto:
-            puntuacion_especialidad = max(0, max_especialidad - decay_especialidad * especialistas_puesto.index(trabajador))
+                    # Puntuación por estar más alto en las listas de especialidades.
+                    puntuacion_especialidad: int = 0
+                    especialistas_puesto: list[Trabajador] = especialidades.get(puesto, [])
+                    if trabajador in especialistas_puesto:
+                        puntuacion_especialidad = max(0, max_especialidad - decay_especialidad * especialistas_puesto.index(trabajador))
 
-        # Puntuación por preferencia de jornada o penalización por no ser voluntario para noche
-        puntuacion_jornada: int = 0
-        if jornada in Jornada.jornadas_con_preferencia():
-            tipo_jornada = jornada.tipo_jornada
-            if trabajador in preferencia_por_jornada[tipo_jornada]:
-                puntuacion_jornada += max_preferencia_por_jornada[tipo_jornada] - decay_preferencia_por_jornada[tipo_jornada] * preferencia_por_jornada[tipo_jornada].index(trabajador)
-            else:
-                puntuacion_jornada -= penalizacion_por_jornada[tipo_jornada]
+                    # Puntuación por preferencia de jornada o penalización por no ser voluntario para noche
+                    puntuacion_jornada: int = 0
+                    if jornada in Jornada.jornadas_con_preferencia():
+                        tipo_jornada = jornada.tipo_jornada
+                        if trabajador in preferencia_por_jornada[tipo_jornada]:
+                            puntuacion_jornada += max_preferencia_por_jornada[tipo_jornada] - decay_preferencia_por_jornada[tipo_jornada] * preferencia_por_jornada[tipo_jornada].index(trabajador)
+                        else:
+                            puntuacion_jornada -= penalizacion_por_jornada[tipo_jornada]
 
-        coeficientes_asignaciones[trabajador, puesto, jornada] = puntuacion_capacidad + puntuacion_especialidad + puntuacion_jornada
+                    coeficientes_asignaciones[trabajador, puesto, jornada] = puntuacion_capacidad + puntuacion_especialidad + puntuacion_jornada
 
     return coeficientes_asignaciones, coeficientes_dobles
 
@@ -123,13 +120,16 @@ def realizar_asignacion(
     parametros: ParametrosPuntuacion = ParametrosPuntuacion()
 ) -> set[tuple[Trabajador, PuestoTrabajo, Jornada]]:
 
-    model: CpModel = CpModel()
+    # ******************************************************************************************************************
+    # *********************************** DESEMPAQUETADO Y PRECOMPUTACIÓN **********************************************
+    # ******************************************************************************************************************
 
+    # Se desempaquetan los datos básicos y las listas de preferencias.
     trabajadores, puestos, jornadas = datos
     especialidades, preferencias_jornada, voluntarios_doble = listas_preferencias
 
     # Se precomputan varios sets para comprobaciones de membresía más rápidas.
-    # No se pueden recibir los datos como sets directamente porque el orden es importante para otras cosas.
+    # No se pueden recibir los datos como sets directamente porque el orden es importante en la asignación.
     set_voluntarios_doble: set[Trabajador] = set(voluntarios_doble)
     set_preferencias_por_jornada: dict[TipoJornada, set[Trabajador]] = {
         tipo_jornada : set(lista_trabajadores)
@@ -140,61 +140,94 @@ def realizar_asignacion(
         for puesto, lista_trabajadores in especialidades.items()
     }
 
-    # Se guardan las variables en un diccionario indexado por tuplas (trabajador, puesto, jornada)
-    vars: dict[tuple[Trabajador, PuestoTrabajo, Jornada], IntVar] = {}
+    # A partir de una función auxiliar, se calculan los coeficientes de puntuación de cada asignación y de asignar o no
+    # a un trabajador a doble jornada. Además, se calcula implícitamente en las llaves del diccionario
+    # coeficientes_asignaciones las combinaciones de (trabajador, puesto, jornada) válidas.
+    coeficientes_asignaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], int]
+    coeficientes_dobles: dict[Trabajador, int]
+    coeficientes_asignaciones, coeficientes_dobles = calcular_coeficientes_puntuacion(
+        trabajadores,
+        jornadas,
+        disponibilidad,
+        listas_preferencias,
+        parametros
+    )
 
-    # Se crean listas de variables que representan ciertos tipos de asignaciones con las que luego nos interesará
-    # realizar ciertos cálculos, como las asignaciones de un trabajador a una de sus especialidades.
-    asignaciones_especialidades: list[IntVar] = []
-    # Mapea cada tipo de jornada a las asignaciones en las que se respeta la preferencia de un trabajador por ese tipo.
-    asignaciones_respeta_jornada: dict[TipoJornada, list[IntVar]] = defaultdict(list)
+    # ******************************************************************************************************************
+    # *********************************** CREACIÓN DEL MODELO Y VARIABLES **********************************************
+    # ******************************************************************************************************************
 
-    for trabajador in trabajadores:
-        for puesto in trabajador.capacidades:
-            for jornada in jornadas:
-                # Solo se crean variables para las asignaciones permitidas, en las que el trabajador es capaz de
-                # realizar el puesto y está disponible para esa jornada.
-                if (trabajador, jornada) in disponibilidad:
-                    var = model.NewBoolVar(f'x_{trabajador}_{puesto}_{jornada}')
-                    vars[trabajador, puesto, jornada] = var
-                    if puesto in trabajador.especialidades:
-                        asignaciones_especialidades.append(var)
-                    if jornada in Jornada.jornadas_con_preferencia() and trabajador in set_preferencias_por_jornada[jornada.tipo_jornada]:
-                        asignaciones_respeta_jornada[jornada.tipo_jornada].append(var)
+    model: CpModel = CpModel()
 
-    # Se guardan expresiones lineales obtenidas al sumar las variables previamente guardadas en ciertas listas.
-    total_asignaciones_especialidades: LinearExpr = LinearExpr.Sum(asignaciones_especialidades)
+    # Se guardarán tuplas Asignacion(trabajador, puesto, jornada, var, puntuacion), a partir de las cuales se accederá
+    # a las variables del modelo. La variable de una asignacion representa la decisión binaria de realizar tal
+    # asignación o no.
+    asignaciones: list[Asignacion] = []
+
+    # Por la lógica de calcular_coeficientes_puntuacion con la que se construyó el diccionario coeficientes_asignaciones,
+    # en el siguiente bucle for solo se iterará en las combinaciones (trabajador, puesto, jornada) válidas, es decir,
+    # en las que el trabajador sea capaz de desempeñar el puesto y esté disponible en esa jornada.
+    for trabajador, puesto, jornada in coeficientes_asignaciones:
+        asignaciones.append(Asignacion(
+            trabajador,
+            puesto,
+            jornada,
+            var=model.NewBoolVar(f'x_{trabajador}_{puesto}_{jornada}'),
+            puntuacion=coeficientes_asignaciones[trabajador, puesto, jornada]
+        ))
+
+    # Se guardan expresiones lineales obtenidas al sumar las variables de las asignaciones que verifican ciertas
+    # condiciones de interés: asignar un trabajador a su especialidad y respetar una preferencia de jornada.
+    total_asignaciones_especialidades: LinearExpr = LinearExpr.Sum([
+        asignacion.var
+        for asignacion in asignaciones
+        if asignacion.puesto in asignacion.trabajador.especialidades
+    ])
     total_asignaciones_respeta_jornada: dict[TipoJornada, LinearExpr] = {
-        tipo_jornada : LinearExpr.Sum(asignaciones)
-        for tipo_jornada, asignaciones in asignaciones_respeta_jornada.items()
+        tipo_jornada : LinearExpr.Sum([
+            asignacion.var
+            for asignacion in asignaciones
+            if asignacion.jornada in Jornada.jornadas_con_preferencia()
+            and asignacion.jornada.tipo_jornada == tipo_jornada
+            and asignacion.trabajador in set_preferencias_por_jornada[tipo_jornada]
+        ])
+        for tipo_jornada in TipoJornada
     }
 
+    # Se preparan diccionarios para almacenar expresiones lineales y variables que representan el total de jornadas
+    # trabajadas por cada trabajador y si un trabajador de la lista de voluntarios a dobles realiza una doble jornada.
     jornadas_trabajadas_por_trabajador: dict[Trabajador, LinearExpr] = {}
     dobles_por_trabajador: dict[Trabajador, IntVar] = {}
+
+    # ******************************************************************************************************************
+    # ************************************** RESTRICCIONES DEL MODELO **************************************************
+    # ******************************************************************************************************************
 
     for trabajador in trabajadores:
         # Se crea una expresión lineal que representa el total de jornadas trabajadas por el trabajador
         trabajador_capacidades: dict[PuestoTrabajo, NivelDesempeno] = trabajador.capacidades
         total_jornadas_trabajadas: LinearExpr = LinearExpr.Sum([
-            vars.get((trabajador, puesto, jornada), 0)
-            for puesto in trabajador_capacidades
-            for jornada in jornadas
+            asignacion.var
+            for asignacion in asignaciones
+            if asignacion.trabajador == trabajador
         ])
         jornadas_trabajadas_por_trabajador[trabajador] = total_jornadas_trabajadas
 
         if trabajador in set_voluntarios_doble:
-            # Cada trabajador voluntario para coeficientes_dobles puede trabajar a lo sumo 2 jornadas.
+            # Cada trabajador voluntario para dobles puede trabajar a lo sumo 2 jornadas.
             model.Add(total_jornadas_trabajadas <= 2)
 
             for jornada in jornadas:
                 # Cada trabajador solo puede desempeñar un puesto en cada jornada, no se puede dividir en dos.
                 model.Add(LinearExpr.Sum([
-                    vars.get((trabajador, puesto, jornada), 0)
-                    for puesto in trabajador_capacidades
+                    asignacion.var
+                    for asignacion in asignaciones
+                    if asignacion.trabajador == trabajador
+                    and asignacion.jornada == jornada
                 ]) <= 1)
 
             # Se crea una variable nueva para representar si el trabajador en el que estamos actualmente iterando
-            # realiza o no una jornada doble. Nótese que se hace esto para los que son voluntarios para coeficientes_dobles.
+            # realiza o no una jornada doble. Nótese que se hace esto para los que son voluntarios para dobles.
             doble_jornada: IntVar = model.NewBoolVar(f'doble_jornada_{trabajador}')
             # Forzamos a que la variable doble_jornada sea verdadera cuando se trabajan 2 jornadas, y falsa en otro caso.
             model.Add(total_jornadas_trabajadas == 2).OnlyEnforceIf(doble_jornada)
@@ -204,10 +237,10 @@ def realizar_asignacion(
             # Un trabajador que dobla jornadas solo puede hacerlo en las que está permitido (las de mañana y tarde)
             # Luego si doble_jornada es cierto, trabajará 0 turnos en las jornadas en las que no se puede doblar.
             model.Add(LinearExpr.Sum([
-                vars.get((trabajador, puesto, jornada), 0)
-                for puesto in trabajador_capacidades
-                for jornada in jornadas
-                if not jornada.puede_doblar
+                asignacion.var
+                for asignacion in asignaciones
+                if asignacion.trabajador == trabajador
+                and not asignacion.jornada.puede_doblar
             ]) == 0).OnlyEnforceIf(doble_jornada)
 
         else:
@@ -218,27 +251,33 @@ def realizar_asignacion(
     for puesto in puestos:
         for jornada in jornadas:
             model.Add(LinearExpr.Sum([
-                vars.get((trabajador, puesto, jornada), 0)
-                for trabajador in trabajadores
+                asignacion.var
+                for asignacion in asignaciones
+                if asignacion.puesto == puesto
+                and asignacion.jornada == jornada
             ]) == demanda.get((puesto, jornada), 0))
 
-    # Obtenemos de un método auxiliar los coeficientes a aplicar para calcular la puntuación de una asignación concreta
-    coeficientes_asignaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], int]
-    coeficientes_dobles: dict[Trabajador, int]
-    coeficientes_asignaciones, coeficientes_dobles = calcular_coeficientes_puntuacion(listas_preferencias, vars, parametros)
+    # ******************************************************************************************************************
+    # ************************************* FUNCIÓN OBJETIVO A MAXIMIZAR ***********************************************
+    # ******************************************************************************************************************
 
     puntuacion_asignaciones: LinearExpr = LinearExpr.Sum([
-        coeficientes_asignaciones[trabajador, puesto, jornada] * vars[trabajador, puesto, jornada]
-        for trabajador, puesto, jornada in vars
-        if coeficientes_asignaciones[trabajador, puesto, jornada] != 0
+        asignacion.puntuacion * asignacion.var
+        for asignacion in asignaciones
     ])
+
     puntuacion_dobles: LinearExpr = LinearExpr.Sum([
         coeficientes_dobles[trabajador] * dobles_por_trabajador[trabajador]
         for trabajador in dobles_por_trabajador
         if coeficientes_dobles[trabajador] != 0
     ])
+
     # Se maximiza la puntuación obtenida por las asignaciones más las asignaciones a coeficientes_dobles.
     model.Maximize(LinearExpr.Sum(puntuacion_asignaciones, puntuacion_dobles))
+
+    # ******************************************************************************************************************
+    # *********************************************** RESOLUCIÓN *******************************************************
+    # ******************************************************************************************************************
 
     solver: CpSolver = CpSolver()
     solver.parameters.num_search_workers = 8
@@ -248,6 +287,10 @@ def realizar_asignacion(
     #solver.parameters.use_lns = True
 
     status: CpSolverStatus = solver.Solve(model)
+
+    # ******************************************************************************************************************
+    # *********************************** CÁLCULO Y VISUALIZACIÓN DEL RESULTADO ****************************************
+    # ******************************************************************************************************************
 
     if verbose.general:
         if status == cp_model.OPTIMAL:
@@ -260,10 +303,10 @@ def realizar_asignacion(
     if verbose.estadisticas_avanzadas:
         print_estadisticas_avanzadas(solver, "Estadísticas avanzadas")
 
-    resultado = {
-        (trabajador, puesto, jornada)
-        for (trabajador, puesto, jornada) in vars
-        if solver.Value(vars[trabajador, puesto, jornada]) == 1
+    resultado: set[tuple[Trabajador, PuestoTrabajo, Jornada]] = {
+        (asignacion.trabajador, asignacion.puesto, asignacion.jornada)
+        for asignacion in asignaciones
+        if solver.Value(asignacion.var) == 1
     }
 
     trabajadores_asignados_dobles: set[Trabajador] = {
@@ -299,7 +342,32 @@ def realizar_asignacion(
 
     if verbose.general:
 
-        trabajadores_asignados: int = len({trabajador for trabajador, _, _ in resultado})
+        num_trabajadores_asignados: int = len({trabajador for trabajador, _, _ in resultado})
+        num_trabajadores_disponibles: int = len({asignacion.trabajador for asignacion in asignaciones})
+
+        num_preferencia_manana: int = len({
+            asignacion.trabajador
+            for asignacion in asignaciones
+            if asignacion.trabajador in set_preferencias_por_jornada[TipoJornada.MANANA]
+        })
+
+        num_preferencia_tarde: int = len({
+            asignacion.trabajador
+            for asignacion in asignaciones
+            if asignacion.trabajador in set_preferencias_por_jornada[TipoJornada.TARDE]
+        })
+
+        num_voluntarios_noche: int = len({
+            asignacion.trabajador
+            for asignacion in asignaciones
+            if asignacion.trabajador in set_preferencias_por_jornada[TipoJornada.NOCHE]
+        })
+
+        num_voluntarios_dobles: int = len({
+            asignacion.trabajador
+            for asignacion in asignaciones
+            if asignacion.trabajador in set_voluntarios_doble
+        })
 
         puestos_demandados: int = 0
         puestos_demandados_por_jornada: dict[TipoJornada, int] = defaultdict(lambda: 0)
@@ -308,22 +376,14 @@ def realizar_asignacion(
             if jornada in Jornada.jornadas_con_preferencia():
                 puestos_demandados_por_jornada[jornada.tipo_jornada] += valor
 
-        set_trabajadores_disponibles = {trabajador for (trabajador, _, _) in vars}
-        num_trabajadores_disponibles: int = len(set_trabajadores_disponibles)
-
-        num_preferencia_manana: int = len({trabajador for (trabajador, _, _) in vars if trabajador in set_preferencias_por_jornada[TipoJornada.MANANA]})
-        num_preferencia_tarde: int = len({trabajador for (trabajador, _, _) in vars if trabajador in set_preferencias_por_jornada[TipoJornada.TARDE]})
-        num_voluntarios_noche: int = len({trabajador for (trabajador, _, _) in vars if trabajador in set_preferencias_por_jornada[TipoJornada.NOCHE]})
-        num_voluntarios_dobles: int = len({trabajador for (trabajador, _, _) in vars if trabajador in set_voluntarios_doble})
+        puestos_demandados_manana: int = puestos_demandados_por_jornada[TipoJornada.MANANA]
+        puestos_demandados_tarde: int = puestos_demandados_por_jornada[TipoJornada.TARDE]
+        puestos_demandados_noche: int = puestos_demandados_por_jornada[TipoJornada.NOCHE]
 
         num_asignaciones_especialidad: int = solver.Value(total_asignaciones_especialidades)
         num_pref_manana_asignados_manana: int = solver.Value(total_asignaciones_respeta_jornada[TipoJornada.MANANA])
         num_pref_tarde_asignados_tarde: int = solver.Value(total_asignaciones_respeta_jornada[TipoJornada.TARDE])
         num_vol_noche_asignados_noche: int = solver.Value(total_asignaciones_respeta_jornada[TipoJornada.NOCHE])
-
-        puestos_demandados_manana: int = puestos_demandados_por_jornada[TipoJornada.MANANA]
-        puestos_demandados_tarde: int = puestos_demandados_por_jornada[TipoJornada.TARDE]
-        puestos_demandados_noche: int = puestos_demandados_por_jornada[TipoJornada.NOCHE]
 
         print(f"{'Turno':<10} | {'Puestos demandados':<20} | {'Preferencia/voluntarios'}")
         print(f"{'Mañana':<10} | {puestos_demandados_manana:<20} | {num_preferencia_manana}")
@@ -332,20 +392,22 @@ def realizar_asignacion(
         print("-" * 60)
         print(f"{'Dobles':<10} | {'*':<20} | {num_voluntarios_dobles}")
 
-        #print(f"Se demandaron {puestos_demandados_manana} puestos de mañana, {puestos_demandados_tarde} puestos de tarde y {puestos_demandados_noche} puestos nocturnos.")
-        #print(f"Hay {num_preferencia_manana} trabajadores con preferencia de mañana, {num_preferencia_tarde} con preferencia de tarde, {num_voluntarios_noche} voluntarios de noche y {num_voluntarios_dobles} voluntarios de coeficientes_dobles.")
         print(end="\n")
         print(f"Se asignaron {num_pref_manana_asignados_manana} de {num_preferencia_manana} ({formatear_float(100 * float(num_pref_manana_asignados_manana / num_preferencia_manana))}%) trabajadores con preferencia de mañana a turnos de mañana.")
         print(f"Se cubrieron {num_pref_manana_asignados_manana} de {puestos_demandados_manana} ({formatear_float(100 * float(num_pref_manana_asignados_manana) / puestos_demandados_manana)}%) puestos de mañana con trabajadores con preferencia de mañana.")
+
         print(end="\n")
         print(f"Se asignaron {num_pref_tarde_asignados_tarde} de {num_preferencia_tarde} ({formatear_float(100 * float(num_pref_tarde_asignados_tarde) / num_preferencia_tarde)}%) trabajadores con preferencia de tarde a turnos de tarde.")
         print(f"Se cubrieron {num_pref_tarde_asignados_tarde} de {puestos_demandados_tarde} ({formatear_float(100 * float(num_pref_tarde_asignados_tarde) / puestos_demandados_tarde)}%) puestos de tarde con trabajadores con preferencia de tarde.")
+
         print(end="\n")
         print(f"Se asignaron {num_vol_noche_asignados_noche} de {num_voluntarios_noche} ({formatear_float(100 * float(num_vol_noche_asignados_noche) / num_voluntarios_noche)}%) voluntarios de noche a turnos de noche.")
         print(f"Se cubrieron {num_vol_noche_asignados_noche} de {puestos_demandados_noche} ({formatear_float(100 * float(num_vol_noche_asignados_noche) / puestos_demandados_noche)}%) puestos de noche con voluntarios de noche.")
+
         print(end="\n")
         print(f'Número de asignaciones de especialidad alcanzado: {num_asignaciones_especialidad} de {puestos_demandados} ({formatear_float(100 * float(num_asignaciones_especialidad) / puestos_demandados)}%)')
-        print(f'Número de trabajadores asignados: {trabajadores_asignados} de {num_trabajadores_disponibles} ({formatear_float(100 * float(trabajadores_asignados) / num_trabajadores_disponibles)}%)')
+        print(f'Número de trabajadores asignados: {num_trabajadores_asignados} de {num_trabajadores_disponibles} ({formatear_float(100 * float(num_trabajadores_asignados) / num_trabajadores_disponibles)}%)')
+
         print(end="\n")
         print(f'Puntuación alcanzada: {int(solver.ObjectiveValue())}\n')
 
@@ -406,7 +468,7 @@ def realizar_asignacion(
                                 puesto_info: str = f'{p.nombre_es}: {especialidades[p].index(trabajador)}'
                                 print(f'{puesto_info:<15}')
 
-    return resultado
+    return resultado, solver
 
 
 def comparar_asignaciones(
@@ -434,9 +496,32 @@ def comparar_asignaciones(
         print(f"{col1:<45} | {col2:<45}")
 
 
+def test_tiempo_ejecucion(n: int, datos) -> None:
+    print("Test de eficiencia:")
+    tiempo_total: int = 0
+    for i in range(n):
+        _, solver = realizar_asignacion(
+            *datos,
+            verbose=Verbose(
+                general=False,
+                estadisticas_avanzadas=False,
+                asignacion_puestos=False,
+                asignacion_trabajadores=False
+            )
+        )
+        tiempo = solver.wall_time
+        tiempo_total += tiempo
+        print(f"Iteración {i + 1:<2}: {tiempo}")
+    tiempo_total: float | None = tiempo_total / n if tiempo_total != 0 else None
+    if tiempo_total:
+        print(f"Tiempo medio de ejecución: {tiempo_total}")
+    else:
+        print("Error, el tiempo total guardado es nulo.")
+
 if __name__ == "__main__":
-    resultado1 = realizar_asignacion(
-        *data,
+    datos = data
+    resultado = realizar_asignacion(
+        *datos,
         verbose=Verbose(
             general=True,
             estadisticas_avanzadas=True,

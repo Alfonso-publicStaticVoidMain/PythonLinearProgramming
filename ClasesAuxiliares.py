@@ -3,8 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import NamedTuple
 from frozendict import frozendict
+from ortools.sat.python.cp_model import IntVar
 
 from Clases import TipoJornada, Jornada, PuestoTrabajo, Trabajador
+
+
+class Asignacion(NamedTuple):
+    trabajador: Trabajador
+    puesto: PuestoTrabajo
+    jornada: Jornada
+    var: IntVar
+    puntuacion: int
 
 
 class Verbose(NamedTuple):

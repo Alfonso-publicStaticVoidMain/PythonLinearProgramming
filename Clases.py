@@ -441,11 +441,7 @@ class Jornada(Enum):
 
     @classmethod
     def jornadas_puede_doblar(cls: Jornada) -> set[Jornada]:
-        return {
-            jornada
-            for jornada in Jornada
-            if jornada.puede_doblar
-        }
+        return {jornada for jornada in Jornada if jornada.puede_doblar}
 
     @classmethod
     def jornadas_con_preferencia(cls: Jornada) -> set[Jornada]:
