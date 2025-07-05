@@ -183,6 +183,7 @@ def realizar_asignacion(
         for asignacion in asignaciones
         if asignacion.puesto in asignacion.trabajador.especialidades
     ])
+
     total_asignaciones_respeta_jornada: dict[TipoJornada, LinearExpr] = {
         tipo_jornada : LinearExpr.Sum([
             asignacion.var
@@ -194,14 +195,14 @@ def realizar_asignacion(
         for tipo_jornada in TipoJornada
     }
 
+    # ******************************************************************************************************************
+    # ************************************** RESTRICCIONES DEL MODELO **************************************************
+    # ******************************************************************************************************************
+
     # Se preparan diccionarios para almacenar expresiones lineales y variables que representan el total de jornadas
     # trabajadas por cada trabajador y si un trabajador de la lista de voluntarios a dobles realiza una doble jornada.
     jornadas_trabajadas_por_trabajador: dict[Trabajador, LinearExpr] = {}
     dobles_por_trabajador: dict[Trabajador, IntVar] = {}
-
-    # ******************************************************************************************************************
-    # ************************************** RESTRICCIONES DEL MODELO **************************************************
-    # ******************************************************************************************************************
 
     for trabajador in trabajadores:
         # Se crea una expresión lineal que representa el total de jornadas trabajadas por el trabajador
@@ -264,6 +265,7 @@ def realizar_asignacion(
     puntuacion_asignaciones: LinearExpr = LinearExpr.Sum([
         asignacion.puntuacion * asignacion.var
         for asignacion in asignaciones
+        if asignacion.puntuacion != 0
     ])
 
     puntuacion_dobles: LinearExpr = LinearExpr.Sum([
@@ -325,11 +327,11 @@ def realizar_asignacion(
     }
 
     ultimo_codigo_asignado_por_jornada: dict[TipoJornada, int | None] = {
-        tipo_jornada : max({
+        tipo_jornada: max({
             trabajador.codigo
             for (trabajador, _, jornada) in resultado
             if jornada in Jornada.jornadas_con_preferencia()
-            and trabajador in set_preferencias_por_jornada[jornada.tipo_jornada]
+               and trabajador in set_preferencias_por_jornada[jornada.tipo_jornada]
         }, default=None)
         for tipo_jornada in TipoJornada
     }

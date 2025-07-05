@@ -282,6 +282,7 @@ class Trabajador(Identificable):
     capacidades: dict[PuestoTrabajo, NivelDesempeno] = field(default_factory=dict)
 
     def __post_init__(self: Trabajador) -> None:
+        object.__setattr__(self, 'codigo', int(self.codigo))
         super(Trabajador, self).__post_init__()
 
     def actualizar_capacidades(self: Trabajador, puesto: PuestoTrabajo, nivel: NivelDesempeno) -> None:
