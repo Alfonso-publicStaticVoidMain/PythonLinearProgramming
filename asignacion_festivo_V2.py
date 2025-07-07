@@ -11,11 +11,15 @@ from ClasesMetodosAuxiliares import ListasPreferencias, ParametrosPuntuacion, Ve
 from Clases import Trabajador, PuestoTrabajo, Jornada, TipoJornada, NivelDesempeno
 from parse import data
 
+Dia = int
 
-def calcular_coeficientes_puntuacion(
+
+def calcular_coeficientes_puntuacion_festivo(
+    dias: list[Dia],
     trabajadores: list[Trabajador],
     jornadas: set[Jornada],
-    disponibilidad: set[tuple[Trabajador, Jornada]],
+    disponibilidad: set[tuple[Trabajador, Dia, Jornada]],
+    excepciones_puesto_festivo: dict[PuestoTrabajo, set[Trabajador]],
     listas_preferencias: ListasPreferencias,
     parametros: ParametrosPuntuacion
 ) -> tuple[
@@ -28,11 +32,9 @@ def calcular_coeficientes_puntuacion(
     especialidades, preferencia_por_jornada, voluntarios_doble = listas_preferencias
 
     (
-        max_especialidad, decay_especialidad,
         max_capacidad, decay_capacidad,
         max_voluntarios_doble, decay_voluntarios_doble,
-        max_preferencia_por_jornada, decay_preferencia_por_jornada, penalizacion_por_jornada
-    ) = parametros.unpack()
+    ) = parametros.unpack_festivo()
 
     for trabajador in voluntarios_doble:
         coeficientes_dobles[trabajador] = max_voluntarios_doble - decay_voluntarios_doble * voluntarios_doble.index(trabajador)
@@ -42,29 +44,13 @@ def calcular_coeficientes_puntuacion(
             for jornada in jornadas:
                 if (trabajador, jornada) in disponibilidad:
                     # Puntuación por capacidad.
-                    puntuacion_capacidad: int = max(0, max_capacidad - decay_capacidad * (trabajador.capacidades[puesto].id - 1))
-
-                    # Puntuación por estar más alto en las listas de especialidades.
-                    puntuacion_especialidad: int = 0
-                    especialistas_puesto: list[Trabajador] = especialidades.get(puesto, [])
-                    if trabajador in especialistas_puesto:
-                        puntuacion_especialidad = max(0, max_especialidad - decay_especialidad * especialistas_puesto.index(trabajador))
-
-                    # Puntuación por preferencia de jornada o penalización por no ser voluntario para noche
-                    puntuacion_jornada: int = 0
-                    if jornada in Jornada.jornadas_con_preferencia():
-                        tipo_jornada = jornada.tipo_jornada
-                        if trabajador in preferencia_por_jornada[tipo_jornada]:
-                            puntuacion_jornada += max_preferencia_por_jornada[tipo_jornada] - decay_preferencia_por_jornada[tipo_jornada] * preferencia_por_jornada[tipo_jornada].index(trabajador)
-                        else:
-                            puntuacion_jornada -= penalizacion_por_jornada[tipo_jornada]
-
-                    coeficientes_asignaciones[trabajador, puesto, jornada] = puntuacion_capacidad + puntuacion_especialidad + puntuacion_jornada
+                    coeficientes_asignaciones[trabajador, puesto, jornada] = max(0, max_capacidad - decay_capacidad * (trabajador.capacidades[puesto].id - 1))
 
     return coeficientes_asignaciones, coeficientes_dobles
 
 
-def realizar_asignacion(
+def realizar_asignacion_festivo(
+    dias: list[Dia],
     # Datos básicos: listas de trabajadores, puestos y jornadas.
     datos: DatosTrabajadoresPuestosJornadas,
     # Listas de preferencias a respetar: una por especialidad, por tipo de jornada y de voluntarios a coeficientes_dobles.
@@ -104,7 +90,7 @@ def realizar_asignacion(
     # coeficientes_asignaciones las combinaciones de (trabajador, puesto, jornada) válidas.
     coeficientes_asignaciones: dict[tuple[Trabajador, PuestoTrabajo, Jornada], int]
     coeficientes_dobles: dict[Trabajador, int]
-    coeficientes_asignaciones, coeficientes_dobles = calcular_coeficientes_puntuacion(
+    coeficientes_asignaciones, coeficientes_dobles = calcular_coeficientes_puntuacion_festivo(
         trabajadores,
         jornadas,
         disponibilidad,
@@ -461,7 +447,7 @@ def test_tiempo_ejecucion(n: int, datos) -> None:
     print("Test de eficiencia:")
     tiempo_total: int = 0
     for i in range(n):
-        _, solver = realizar_asignacion(
+        _, solver = realizar_asignacion_festivo(
             *datos,
             verbose=Verbose(
                 general=False,
@@ -481,7 +467,7 @@ def test_tiempo_ejecucion(n: int, datos) -> None:
 
 if __name__ == "__main__":
     datos = data
-    resultado = realizar_asignacion(
+    resultado = realizar_asignacion_festivo(
         *datos,
         verbose=Verbose(
             general=True,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import NamedTuple
 from frozendict import frozendict
-from ortools.sat.python.cp_model import IntVar
+from ortools.sat.python.cp_model import IntVar, CpSolver
 
 from Clases import TipoJornada, Jornada, PuestoTrabajo, Trabajador
 
@@ -108,8 +108,50 @@ class ParametrosPuntuacion:
             self.max_preferencia_por_jornada, self.decay_preferencia_por_jornada, self.penalizacion_por_jornada
         )
 
-    def unpack_festivo(self):
+    def unpack_festivo(self: ParametrosPuntuacion) -> tuple:
         return (
             self.max_capacidad, self.decay_capacidad,
             self.max_voluntarios_doble, self.decay_voluntarios_doble
         )
+
+
+def print_estadisticas_avanzadas(solver: CpSolver, mensaje: str = ""):
+    print(mensaje)
+    print(f"Problema resuelto en: {formatear_tiempo(solver.wall_time)}")
+    print(f"Conflictos: {solver.NumConflicts()}")
+    print(f"Ramas: {solver.NumBranches()}\n")
+
+
+def formatear_float(
+    valor: float,
+    *,
+    posiciones_decimales: int = 2,
+    tolerancia: float = 1e-3
+) -> str:
+    """
+    Devuelve una cadena que representa el número en coma flotante recibido como argumento, redondeando al entero más
+    cercano si está a una distancia de él de a lo sumo la tolerancia especificada, o representándolo como número decimal
+    con la cantidad deseada de posiciones decimales en otro caso.
+    """
+    entero_mas_cercano: int = round(valor)
+    if abs(valor - entero_mas_cercano) < tolerancia:
+        return str(entero_mas_cercano)
+    return f"{valor:.{posiciones_decimales}f}"
+
+
+def formatear_tiempo(segundos: float | int) -> str:
+    if segundos < 10:
+        return f"{segundos:.4f} segundos"
+    segundos_int = int(segundos)
+    if segundos_int < 60:
+        return f"{segundos_int} segundos"
+    elif segundos_int < 3600:
+        minutos = segundos_int // 60
+        segundos_restantes = segundos_int % 60
+        return f"{minutos} minutos y {segundos_restantes} segundos"
+    else:
+        horas = segundos_int // 3600
+        segundos_restantes = segundos_int % 3600
+        minutos = segundos_restantes // 60
+        segundos_restantes = segundos_restantes % 60
+        return f"{horas} horas, {minutos} minutos y {segundos_restantes} segundos"

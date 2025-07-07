@@ -3,7 +3,7 @@ from collections import defaultdict, namedtuple
 from itertools import product
 import json
 
-from ClasesAuxiliares import DatosTrabajadoresPuestosJornadas, ListasPreferencias
+from ClasesMetodosAuxiliares import DatosTrabajadoresPuestosJornadas, ListasPreferencias
 from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, parse_bool, TipoJornada
 
 T = TypeVar('T')

@@ -4,7 +4,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field, is_dataclass, fields
 from datetime import date, datetime
-from typing import ClassVar, Type, TypeVar, Any, get_type_hints, Generic
+from typing import ClassVar, Type, TypeVar, Any, get_type_hints, Generic, Iterator, Callable
 from enum import Enum
 
 T = TypeVar("T", bound="Identificable")
@@ -83,85 +83,190 @@ def parse_bool(value: str | int) -> bool:
     return str(value).strip() in {'true', 'True', '1', 'yes', 'Yes', 'y', 'Y'}
 
 
-@dataclass
-class IdList:
-    id_list: list[int]
-    cls: type[Identificable] = field(default=None)
+class IdList(list[int], Generic[T]):
+    """
+    Clase que extiende de list[int] que es una lista de los ids de una cierta clase Identificable, que se guarda en
+    un atributo cls, que en la instanciación será dado explícitamente o deducido del iterable recibido como argumento.
 
-    def __post_init__(self: IdList):
-        if not self.id_list:
-            if self.cls is None:
-                raise ValueError("No se puede inferir el tipo de la lista porque está vacía y no se proporcionó cls.")
-            elif self.cls is not int and not issubclass(self.cls, Identificable):
-                raise ValueError(f"El tipo {self.cls} no es una subclase válida de Identificable.")
-            return
+    Iterar sobre un objeto IdList iterará sobre los ids enteros. Si se quiere acceder a la lista que contiene los
+    objetos de Identificable que representan, se usará objects().
 
-        inferred_cls = None
+    Los métodos __contains__, __setitem__, append y remove se han sobreescrito para que acepten como argumento objetos
+    de Identificable, así como int o str (que represente un entero acorde) para mayor flexibilidad.
+    """
 
-        for i in range(len(self.id_list)):
-            item = self.id_list[i]
+    cls: type[T] | None
 
+    def __init__(
+        self: IdList[T],
+        items: Iterable[int | str | T] = (),
+        cls: type[T] | None = None
+    ) -> None:
+        if cls is not None and not issubclass(cls, Identificable):
+            raise ValueError(f"No se puede crear una lista de IDs de tipo {cls} porque no extiende de Identificable.")
+
+        self.cls = cls
+        lista_ids: list[int] = []
+
+        for item in items:
+
+            # Si item es Identificable, se infiere de él el tipo de la lista si no se había inferido anteriormente,
+            # y en otro caso, si el tipo del item no coincide con el tipo inferido, se lanza un error.
             if isinstance(item, Identificable):
-                if inferred_cls is None:
-                    inferred_cls = type(item)
-                elif not isinstance(item, inferred_cls):
-                    raise ValueError(f"Todos los objetos deben ser del mismo tipo Identificable ({inferred_cls}).")
-                self.id_list[i] = item.id
+                if self.cls is None:
+                    self.cls = type(item)
+                elif not isinstance(item, self.cls):
+                    raise ValueError(f"Todos los objetos deben ser del mismo tipo Identificable ({self.cls}).")
+                lista_ids.append(int(item))
 
+            # Si item es un entero, se comprueba si es positivo.
             elif isinstance(item, int):
                 if item < 0:
                     raise ValueError(f"ID inválido {item}: debe ser un entero positivo.")
+                lista_ids.append(item)
 
+            # Si item es una cadena, se comprueba si se puede convertir a un entero positivo.
             elif isinstance(item, str):
                 try:
-                    int_value = int(item)
-                    if int_value < 0:
+                    val = int(item)
+                    if val < 0:
                         raise ValueError()
-                    self.id_list[i] = int_value
+                    lista_ids.append(val)
                 except ValueError:
                     raise ValueError(f"El string '{item}' no representa un ID entero válido.")
+
+            # Si item no es un Identificable, int o str, se lanza un error.
             else:
                 raise TypeError(f"Elemento inválido en la lista: {item} (tipo {type(item)})")
 
+        # Si self.cls es None, no se pudo inferir la clase de la IdList tras iterar los elementos de la lista
+        # recibida como parámetro, luego se lanza un error, pues no se puede dar tipo al objeto IdList.
         if self.cls is None:
-            if inferred_cls is None:
-                raise ValueError("No se pudo inferir el tipo cls a partir de la lista.")
-            self.cls = inferred_cls
+            raise ValueError("No se pudo inferir el tipo cls a partir de los elementos proporcionados.")
 
-        elif self.cls is not int and not issubclass(self.cls, Identificable):
+        # Si de algún modo se infirió un tipo que no extiende de Identificable, se lanza un error.
+        if not issubclass(self.cls, Identificable):
             raise ValueError(f"El tipo {self.cls} no es una subclase válida de Identificable.")
 
-        elif inferred_cls is not None and not issubclass(inferred_cls, self.cls):
-            raise ValueError(f"Los elementos de la lista no coinciden con el tipo declarado {self.cls}.")
-
+        # Se itera de nuevo en la lista comprobando que todos los ids guardados aparecen en el registro del tipo
+        # de la lista. Si alguno no aparece, se lanza un error.
         registro = self.cls.get_registro()
-        for id in self.id_list:
-            if id not in registro:
-                raise ValueError(f"{id} no está presente en el registro de la clase {self.cls}")
+        for id_ in lista_ids:
+            if id_ not in registro:
+                raise ValueError(f"{id_} no está presente en el registro de la clase {self.cls}")
 
-    def get(self: IdList, index: int, fallback: T | None = None) -> T | None:
+        super().__init__(lista_ids)
+
+    def __getitem__(self: IdList[T], index: int | slice) -> T | IdList[T]:
+        if isinstance(index, slice):
+            return IdList(self[index.start:index.stop:index.step], cls=self.cls)
+        return super().__getitem__(index)
+
+    def __setitem__(self: IdList[T], index: int, value: int | str | T) -> None:
         try:
-            value: T = self.cls.from_id(self.id_list[index])
-            return value or fallback
+            id_ = int(value)
+        except ValueError:
+            raise ValueError(f"{value} no se puede convertir a un entero.")
+        if self.cls is not int and id_ not in self.cls.get_registro():
+            raise ValueError(f"El id {id_} no está en el registro de {self.cls}")
+        super().__setitem__(index, id_)
+
+    def __contains__(self: IdList[T], item: int | str | T) -> bool:
+        try:
+            id_ = int(item)
+        except ValueError:
+            return False
+        return id_ in self
+
+    def objects(self: IdList[T]) -> list[T]:
+        return [self.cls.from_id(id_) for id_ in self]
+
+    def extend(self: IdList[T], items: Iterable[int | str | T]) -> None:
+        for item in items:
+            self.append(item)
+
+    def get_object(self: IdList[T], index: int, fallback: T | None = None) -> T | None:
+        try:
+            id_ = self.get(index, None)
+            return self.cls.from_id(id_) or fallback
         except IndexError:
-            return None
+            return fallback
 
-    def append(self: IdList, element: T | int | str):
+    def append(self: IdList[T], element: int | str | T) -> None:
         try:
-            element = int(element) # Aplicar int() a un Identificable devuelve su id.
+            id_ = int(element)
         except ValueError:
             raise ValueError(f"{element} no se puede convertir a un entero.")
 
-        if element not in self.cls.get_registro():
-            raise ValueError(f"El elemento con id {element} no está presente en el registro de la clase {self.cls}")
-        self.id_list.append(element)
+        if id_ not in self.cls.get_registro():
+            raise ValueError(f"El id {id_} no está en el registro de {self.cls}")
+        super().append(id_)
 
-    def remove(self: IdList, element: T | int | str):
+    def remove(self: IdList[T], element: int | str | T) -> None:
         try:
-            element = int(element) # Aplicar int() a un Identificable devuelve su id.
-            self.id_list.remove(element)
+            id_ = int(element)
+            super().remove(id_)
         except ValueError:
-            return
+            pass
+
+    def sort(self: IdList[T], key: Callable[[T], Any] = lambda x: x.id, reverse: bool = False) -> None:
+        objects = self.objects()
+        objects.sort(key=key, reverse=reverse)
+        self[:] = [int(obj) for obj in objects]
+
+    def sorted(self: IdList[T], key: Callable[[T], Any] = lambda x: x.id, reverse: bool = False) -> IdList[T]:
+        objects = self.objects()
+        objects.sort(key=key, reverse=reverse)
+        return IdList(objects, cls=self.cls)
+
+    def filter(self: IdList[T], predicate: Callable[[T], bool]) -> IdList[T]:
+        return IdList([int(obj) for obj in self.objects() if predicate(obj)], cls=self.cls)
+
+    def map(self: IdList[T], func: Callable[[T], Any]) -> list[Any]:
+        return [func(obj) for obj in self.objects()]
+
+    def map_to_identificable(self: IdList[T], func: Callable[[T], Identificable]) -> IdList:
+        resultado = [func(obj) for obj in self.objects()]
+        if not resultado:
+            raise ValueError("No se pudieron mapear los objetos, la lista resultante está vacía.")
+        cls_inferida = type(resultado[0])
+        if not all(isinstance(obj, cls_inferida) for obj in resultado):
+            raise ValueError("Todos los objetos mapeados deben ser del mismo tipo Identificable.")
+        return IdList([int(obj) for obj in resultado], cls=cls_inferida)
+
+    def flatmap(self: IdList[T], func: Callable[[T], Iterable[Any]]) -> list[Any]:
+        return [valor for obj in self.objects() for valor in func(obj)]
+
+    def flatmap_to_identificable(self: IdList[T], func: Callable[[T], Iterable[Identificable]]) -> IdList:
+        resultado = [valor for obj in self.objects() for valor in func(obj)]
+        if not resultado:
+            raise ValueError("No se pudieron flatmapear los objetos, la lista resultante está vacía.")
+        cls_inferida = type(resultado[0])
+        if not all(isinstance(r, cls_inferida) for r in resultado):
+            raise ValueError("Todos los objetos mapeados deben ser del mismo tipo Identificable.")
+        return IdList([int(obj) for obj in resultado], cls=cls_inferida)
+
+    def any_match(self: IdList[T], predicate: Callable[[T], bool]) -> bool:
+        return any(predicate(obj) for obj in self.objects())
+
+    def all_match(self: IdList[T], predicate: Callable[[T], bool]) -> bool:
+        return all(predicate(obj) for obj in self.objects())
+
+    def none_match(self: IdList[T], predicate: Callable[[T], bool]) -> bool:
+        return not any(predicate(obj) for obj in self.objects())
+
+    def distinct(self: IdList[T]) -> IdList[T]:
+        vistos = set()
+        ids_unicos = []
+        for id_ in self:
+            if id_ not in vistos:
+                vistos.add(id_)
+                ids_unicos.append(id_)
+        return IdList(ids_unicos, self.cls)
+
+    def for_each(self: IdList[T], consumer: Callable[[T], None]) -> None:
+        for obj in self.objects():
+            consumer(obj)
 
 
 @dataclass(eq=False, slots=True, frozen=True)
@@ -538,7 +643,13 @@ if __name__ == "__main__":
     t1: Trabajador = Trabajador(id=1, nombre="Alfonso", apellidos="Gallego", codigo=5000)
     t2: Trabajador = Trabajador(id=2, nombre="Pepito", apellidos="Pérez", codigo=5001)
     t3: Trabajador = Trabajador(id=3, nombre="María", apellidos="Gómez", codigo=5002)
+    t4: Trabajador = Trabajador(id=4, nombre="José Manuel", apellidos="Fernández", codigo=5003)
+    t5: Trabajador = Trabajador(id=5, nombre="Ana", apellidos="Díaz", codigo=5004)
 
-    lista_de_ids: IdList = IdList(id_list=[t1, t2, 3], cls=Trabajador)
-    print(lista_de_ids.id_list)
-    print(lista_de_ids.get(2).nombre)
+    lista_de_ids: IdList = IdList([t1, t2, 3, 4, t5], cls=Trabajador)
+    print(lista_de_ids)
+    lista_de_ids.for_each(lambda t: print(t.nombre, t.apellidos))
+    print("------------------------------------------------------")
+    lista_de_ids.filter(lambda t: t.nombre.startswith("A")).for_each(lambda t: print(t.nombre, t.apellidos))
+    print("------------------------------------------------------")
+    print(lista_de_ids.map(lambda t: str(t.id) + "/" + str(t.codigo)))
