@@ -4,7 +4,7 @@ from itertools import product
 import json
 
 from ClasesMetodosAuxiliares import DatosTrabajadoresPuestosJornadas, ListasPreferencias
-from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, parse_bool, TipoJornada
+from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, TipoJornada, IdList, parse_bool
 
 T = TypeVar('T')
 get_id = lambda p : p.id
@@ -124,7 +124,7 @@ def parse_grupos(nombre_grupo_tarde: Grupo):
 def parse_contratos():
     lista_trabajadores: list[Trabajador] = []
     for entry in contratos_data: # type: dict[str, Any]
-        trabajador = Trabajador.from_id(entry["TrabajadorContrato"]["trabajador_id"])
+        trabajador: Trabajador = Trabajador.from_id(entry["TrabajadorContrato"]["trabajador_id"])
         if trabajador is not None:
             lista_trabajadores.append(trabajador)
     return lista_trabajadores
