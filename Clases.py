@@ -123,7 +123,9 @@ class Trabajador(Identificable):
     apellidos: str
     codigo: int
     especialidades: set[PuestoTrabajo] = field(default_factory=set)
+    especialidades_ids: set[int] = field(default_factory=set)
     capacidades: dict[PuestoTrabajo, NivelDesempeno] = field(default_factory=dict)
+    capacidades_ids: dict[int, int] = field(default_factory=dict)
 
     def __post_init__(self: Trabajador) -> None:
         object.__setattr__(self, 'codigo', int(self.codigo))
@@ -137,10 +139,13 @@ class Trabajador(Identificable):
         por uno que no sea el de especialidad, entonces se elimina del conjunto de especialidades.
         """
         self.capacidades[puesto] = nivel
+        self.capacidades_ids[puesto.id] = nivel.id
         if nivel.id == 1 and puesto not in self.especialidades:
             self.especialidades.add(puesto)
+            self.especialidades_ids.add(puesto.id)
         if nivel.id != 1 and puesto in self.especialidades:
             self.especialidades.remove(puesto)
+            self.especialidades_ids.remove(puesto.id)
 
     def __str__(self: Trabajador) -> str:
         return f'{self.codigo}'
@@ -211,11 +216,15 @@ class TrabajadorPuestoTrabajo(Identificable):
     def nivel_desempeno_nombre(self: TrabajadorPuestoTrabajo) -> str:
         return self.nivel_desempeno.nombre_es
 
-"""
+
 @dataclass(eq=False, slots=True, frozen=True)
 class TipoJornada(Identificable):
     id: int
     nombre_es: str
+
+    manana_Bilbao_id: ClassVar[int] = 1
+    tarde_Bilbao_id: ClassVar[int] = 2
+    noche_Bilbao_id: ClassVar[int] = 3
 
     def __post_init__(self: TipoJornada) -> None:
         super(TipoJornada, self).__post_init__()
@@ -231,6 +240,12 @@ class Jornada(Identificable):
     puede_doblar: bool
     tipo_jornada_id: int
     tipo_jornada: TipoJornada = field(default=None)
+
+    manana_Bilbao_id: ClassVar[int] = 1
+    tarde_Bilbao_id: ClassVar[int] = 2
+    partida_Bilbao_id: ClassVar[int] = 3
+    noche1_Bilbao_id: ClassVar[int] = 4
+    noche2_Bilbao_id: ClassVar[int] = 5
 
     def __post_init__(self: Jornada) -> None:
         object.__setattr__(self, 'puede_doblar', parse_bool(self.puede_doblar))
@@ -261,28 +276,49 @@ class Jornada(Identificable):
         return self.id >= other.id
 
     @classmethod
-    def jornadas_nocturnas(cls: Jornada) -> set[Jornada]:
+    def jornadas_nocturnas(cls: Jornada) -> set[int]:
         return {
-            jornada
-            for jornada in cls.get_registro().values()
-            if jornada.tipo_jornada.nombre_es == "Noche"
+            jornada_id
+            for jornada_id in Jornada.get_registro().keys()
+            if Jornada.from_id(jornada_id).tipo_jornada.nombre_es == "Noche"
         }
 
     @classmethod
-    def jornadas_puede_doblar(cls: Jornada) -> set[Jornada]:
+    def jornadas_puede_doblar(cls: Jornada) -> set[int]:
         return {
-            jornada
-            for jornada in Jornada.get_registro().values()
-            if jornada.puede_doblar
+            jornada_id
+            for jornada_id in Jornada.get_registro().keys()
+            if Jornada.from_id(jornada_id).puede_doblar
         }
 
     @classmethod
-    def jornadas_con_preferencia(cls: Jornada) -> set[Jornada]:
+    def jornadas_con_preferencia(cls: Jornada) -> set[int]:
         return {
-            jornada
-            for jornada in Jornada.get_registro().values()
-            if jornada.nombre_es != "Partida"
+            jornada_id
+            for jornada_id in Jornada.get_registro().keys()
+            if Jornada.from_id(jornada_id).nombre_es != "Partida"
         }
+
+    @classmethod
+    def mañana_Bilbao(cls: Jornada) -> Jornada:
+        return Jornada(1, "Mañana", True, 1)
+
+    @classmethod
+    def tarde_Bilbao(cls: Jornada) -> Jornada:
+        return Jornada(2, "Tarde", True, 2)
+
+    @classmethod
+    def partida_Bilbao(cls: Jornada) -> Jornada:
+        return Jornada(3, "Partida", False, 1)
+
+    @classmethod
+    def noche1_Bilbao(cls: Jornada) -> Jornada:
+        return Jornada(4, "Noche1", False, 3)
+
+    @classmethod
+    def noche2_Bilbao(cls: Jornada) -> Jornada:
+        return Jornada(5, "Noche2", False, 3)
+
 """
 
 class TipoJornada(Enum):
@@ -377,10 +413,12 @@ class Jornada(Enum):
             print(e)
             return None
 
+"""
+
 T = TypeVar("T", Identificable, Jornada, TipoJornada)
 
 
-def parse_data_into(cls: Type[T], data: dict[str, Any]) -> T:
+def parse_data_into(cls: type[T], data: dict[str, Any]) -> T:
     """
     Parsea el contenido de un diccionario en una clase, asignándole a sus atributos los valores de las llaves del
     diccionario cuyo nombre coincida exactamente con el nombre del atributo.
@@ -449,14 +487,18 @@ def get_by_id(
         return fallback
 
 
-V = TypeVar("V")
-class IdDict(dict[int, V], Generic[T, V]):
+_V = TypeVar("V")
+K = TypeVar("K", bound=Identificable)
+V = TypeVar("V", bound=Identificable)
+
+
+class IdDict(dict[int, _V], Generic[T, _V]):
 
     cls: type[T] | None
 
     def __init__(
-        self: IdDict[T, V],
-        items: Mapping[int | str | T, V] | Iterable[tuple[int | str | T, V]] = (),
+        self: IdDict[T, _V],
+        items: Mapping[int | str | T, _V] | Iterable[tuple[int | str | T, _V]] = (),
         cls: type[T] | None = None
     ) -> None:
         if cls is not None and not issubclass(cls, Identificable):
@@ -469,7 +511,7 @@ class IdDict(dict[int, V], Generic[T, V]):
         elif not isinstance(items, Iterable):
             raise TypeError("items debe ser un mapeo o un iterable de pares (key, value)")
 
-        result: dict[int, V] = {}
+        result: dict[int, _V] = {}
         for key, value in items:
             if isinstance(key, Identificable):
                 if self.cls is None:
@@ -482,6 +524,8 @@ class IdDict(dict[int, V], Generic[T, V]):
             elif isinstance(key, str):
                 try:
                     key_id = int(key)
+                    if key_id < 0:
+                        raise ValueError()
                 except ValueError:
                     raise ValueError(f"Clave inválida: {key}")
             else:
@@ -499,7 +543,7 @@ class IdDict(dict[int, V], Generic[T, V]):
 
         super().__init__(result)
 
-    def __setitem__(self, key: int | str | T, value: V) -> None:
+    def __setitem__(self, key: int | str | T, value: _V) -> None:
         key_id = validate_id(key, self.cls)
         super().__setitem__(key_id, value)
 
@@ -512,11 +556,125 @@ class IdDict(dict[int, V], Generic[T, V]):
     def keys_objects(self) -> set[T]:
         return {self.cls.from_id(id_) for id_ in self.keys_ids()}
 
-    def items(self) -> set[tuple[int, V]]:
+    def items(self) -> set[tuple[int, _V]]:
         return set(super().items())
 
-    def values(self) -> ValuesView[V]:
+    def values(self) -> ValuesView[_V]:
         return super().values()
+
+
+class IdDoubleDict(dict[int, int], Generic[K, V]):
+
+    key_cls: type[K]
+    value_cls: type[V]
+
+    def __init__(
+        self: IdDoubleDict[K, V],
+        items: Mapping[int | str | K, int | str | V] | Iterable[tuple[int | str | K, int | str | V]] = (),
+        key_cls: type[K] | None = None,
+        value_cls: type[V] | None = None
+    ) -> None:
+        if key_cls is not None and not issubclass(key_cls, Identificable):
+            raise ValueError(f"El tipo {key_cls} no extiende de Identificable.")
+        if value_cls is not None and not issubclass(value_cls, Identificable):
+            raise ValueError(f"El tipo {value_cls} no extiende de Identificable.")
+
+        if isinstance(items, Mapping):
+            items = items.items()
+        elif not isinstance(items, Iterable):
+            raise TypeError("items debe ser un mapeo o un iterable de pares (key, value)")
+
+        result: dict[int, int] = {}
+
+        for key, value in items:
+            # Procesado de las llaves (keys)
+            if isinstance(key, Identificable):
+                # Si el atributo key_cls era nulo, se infiere de la clase de la llave en la que se está itereando
+                if key_cls is None:
+                    key_cls = type(key)
+                # Si key_cls no era nulo, se comprueba que la llave tiene ese tipo.
+                elif not isinstance(key, key_cls):
+                    raise ValueError(f"Todos los objetos clave deben ser del mismo tipo Identificable ({key_cls}).")
+                key_id = int(key)
+            elif isinstance(key, str):
+                try:
+                    key_id = int(key)
+                    if key_id < 0:
+                        raise ValueError()
+                except ValueError:
+                    raise ValueError(f"Clave inválida: {key}")
+            elif isinstance(key, int):
+                key_id = key
+            else:
+                raise TypeError(f"Clave inválida: {key} (tipo {type(key)})")
+
+            # Procesado de los valores (values)
+            if isinstance(value, Identificable):
+                if value_cls is None:
+                    value_cls = type(value)
+                elif not isinstance(value, value_cls):
+                    raise ValueError(f"Todos los valores deben ser del mismo tipo Identificable ({value_cls}).")
+                value_id = int(value)
+            elif isinstance(value, str):
+                try:
+                    value_id = int(value)
+                    if value_id < 0:
+                        raise ValueError()
+                except ValueError:
+                    raise ValueError(f"Valor inválido: {value}")
+            elif isinstance(value, int):
+                value_id = value
+            else:
+                raise TypeError(f"Valor inválido: {value} (tipo {type(value)})")
+
+            result[key_id] = value_id
+
+        if key_cls is None or value_cls is None:
+            raise ValueError("No se pudo inferir key_cls o value_cls a partir de los elementos.")
+
+        # Validación de que todos los ids de llaves y valores están en el registro.
+        for key_id in result:
+            if key_id not in key_cls.get_registro():
+                raise ValueError(f"{key_id} no está presente en el registro de la clase {key_cls}")
+        for value_id in result.values():
+            if value_id not in value_cls.get_registro():
+                raise ValueError(f"{value_id} no está presente en el registro de la clase {value_cls}")
+
+        self.key_cls = key_cls
+        self.value_cls = value_cls
+        super().__init__(result)
+
+    def __setitem__(self, key: int | str | K, value: int | str | V) -> None:
+        key_id = validate_id(key, self.key_cls)
+        value_id = validate_id(value, self.value_cls)
+        super().__setitem__(key_id, value_id)
+
+    def keys_ids(self) -> set[int]:
+        return set(super().keys())
+
+    def values_ids(self) -> set[int]:
+        return set(super().values())
+
+    def keys(self) -> IdSet[K]:
+        return IdSet(self.keys_ids(), cls=self.key_cls)
+
+    def values(self) -> IdSet[V]:
+        return IdSet(self.values_ids(), cls=self.value_cls)
+
+    def keys_objects(self) -> set[K]:
+        return {self.key_cls.from_id(id_) for id_ in self.keys_ids()}
+
+    def values_objects(self) -> set[V]:
+        return {self.value_cls.from_id(id_) for id_ in self.values_ids()}
+
+    def items(self) -> set[tuple[int, int]]:
+        return set(super().items())
+
+    def items_objects(self) -> set[tuple[K, V]]:
+        return {
+            (self.key_cls.from_id(k_id), self.value_cls.from_id(v_id))
+            for k_id, v_id in self.items()
+        }
 
 
 class IdSet(set[int], Generic[T]):
@@ -924,6 +1082,7 @@ class IdTuple(tuple[int, ...]):
 
     def get_object(self: IdTuple, index: int) -> T:
         return self.classes[index].from_id(self[index])
+
 
 @dataclass(slots=True, frozen=True)
 class IdKey(Generic[T]):

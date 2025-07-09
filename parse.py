@@ -152,4 +152,4 @@ def parse_all_data(nombre_grupo_tarde: Grupo) -> tuple[
     )
 
 
-data = parse_all_data("Grupo1")
+#data = parse_all_data("Grupo1")

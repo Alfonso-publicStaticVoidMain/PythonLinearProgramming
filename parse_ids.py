@@ -1,9 +1,11 @@
-from typing import TypeVar, Any, NamedTuple, Literal
+from typing import TypeVar, Any, NamedTuple, Literal, Callable
 from collections import defaultdict, namedtuple
 from itertools import product
+from functional import seq
 import json
 
-from ClasesMetodosAuxiliares import DatosTrabajadoresPuestosJornadas, ListasPreferencias
+from ClasesMetodosAuxiliares import DatosTrabajadoresPuestosJornadas, ListasPreferencias, \
+    IdsTrabajadoresPuestosJornadas, IdsListasPreferencias
 from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, TipoJornada, IdList, parse_bool, IdDict
 
 T = TypeVar('T')
@@ -30,16 +32,34 @@ voluntarios_data: dict[str, Any] = load_json_file("../data" + data + "/concesion
 excepciones_data: dict[str, Any] = load_json_file("../data" + data + "/excepciones_trabajadores.json")
 eventos_data: dict[str, Any] = load_json_file("../data" + data + "/eventos_trabajadores.json")
 jornadas_data: dict[str, Any] = load_json_file("../data" + data + "/jornadas.json")
+tipos_jornadas_data: dict[str, Any] = load_json_file("../data" + data + "/tipos_jornadas.json")
 concesiones_data: dict[str, Any] = load_json_file("../data" + data + "/concesiones.json")
 grupos_data: dict[str, Any] = load_json_file("../data" + data + "/trabajadores_grupos_personales.json")
 contratos_data: dict[str, Any] = load_json_file("../data" + data + "/contratos.json")
 
 
-def parse_trabajadores_puestos() -> IdDict[PuestoTrabajo, IdList[Trabajador]]:
-    # Se van a devolver un diccionario indexado por tuplas (trabajador, puesto), mapeándolas a un objeto NivelDesempeno,
-    # que representa la eficacia del trabajador en ese puesto, siendo un ID de 1 su especialidad principal, y un
-    # diccionario indexado por PuestoTrabajo que mapea a una lista de los trabajadores que tienen esa especialidad.
-    dict_especialidades: IdDict[PuestoTrabajo, IdList[Trabajador]] = IdDict(items={}, cls=PuestoTrabajo)
+def ordena_ids_trabajadores(lista_trabajadores: list[int], key: Callable[[Trabajador], int] = get_codigo) -> list[int]:
+    """
+    Recibe como argumento una lista de IDs que representan trabajadores. Pasa esa lista a la lista de los objetos de
+    Trabajador que representan, los ordena por la llave argumento (por defecto por su código), los devuelve a sus IDs,
+    y retorna la lista resultante.
+    """
+    if not lista_trabajadores:
+        return []
+    return (
+        seq(lista_trabajadores)
+        .map(lambda id_: Trabajador.from_id(id_))
+        .sorted(key=key)
+        .map(int)
+        .to_list()
+    )
+
+
+def parse_trabajadores_puestos_ids() ->dict[int, list[int]]:
+    """
+    Retorna un diccionario que mapea: id_puesto -> lista de ids de los trabajadores que son especialistas en ese puesto.
+    """
+    especialistas_por_puesto: dict[int, list[int]] = defaultdict(list)
     for entry in puestos_data: # type: dict[str, Any]
         # Se parsea la información del JSON en un objeto de Trabajador, PuestoTrabajo y NivelDesempeno
         trabajador: Trabajador = Trabajador.get_or_create(entry["Trabajador"])
@@ -50,108 +70,156 @@ def parse_trabajadores_puestos() -> IdDict[PuestoTrabajo, IdList[Trabajador]]:
         trabajador.actualizar_capacidades(puesto, nivel)
         # Si el ID del NivelDesempeno es 1, es una especialidad, así que se actualizan las listas apropiadas.
         if nivel.id == 1:
-            if puesto not in dict_especialidades:
-                dict_especialidades[puesto] = IdList(items=[], cls=Trabajador)
-            dict_especialidades[puesto].append(trabajador)
-    for lista_especialidades in dict_especialidades.values(): # type: IdList[Trabajador]
-        lista_especialidades.sort(key=get_codigo)
-    return dict_especialidades
+            especialistas_por_puesto[puesto.id].append(trabajador.id)
+    # Se ordena cada lista por el código de los trabajadores. Para alcanzar esto, primero hay que convertir los IDs en
+    # objetos de Trabajador mediante from_id, ordenarlos por su código, luego volverlos a convertir en un ID con int().
+    for ids_trabajadores_especialistas in especialistas_por_puesto.values():
+        ids_trabajadores_especialistas = ordena_ids_trabajadores(ids_trabajadores_especialistas)
+    return especialistas_por_puesto
 
 
-def parse_demandas() -> dict[tuple[PuestoTrabajo, Jornada], int]:
-    demandas: dict[tuple[PuestoTrabajo, Jornada], int] = defaultdict(lambda:0)
+def parse_jornadas_ids() -> list[int]:
+    """
+    Retorna la lista de todas las jornadas.
+    """
+    jornadas: list[int] = []
+
+    # Recorre el json de tipos de jornadas y crea un objeto para cada uno, almacenándolo automáticamente en el registro
+    # de Identificable para su posterior acceso mediante from_id.
+    for entry in tipos_jornadas_data["rows"]: # type: dict[str, Any]
+        TipoJornada.get_or_create(entry)
+
+    # Recorre el json de jornadas y crea un objeto para cada una. Automáticamente, también le asigna un atributo
+    # tipo_jornada que referencia al objeto de TipoJornada apropiado, gracias a que estos fueron registrados al crearse.
+    for entry in jornadas_data["rows"]:
+        jornadas.append(Jornada.get_or_create(entry).id)
+
+    return jornadas
+
+
+def parse_demandas_ids() -> dict[tuple[int, int], int]:
+    """
+    Retorna un diccionario que mapea: (puesto_id, jornada_id) -> cantidad de trabajadores demandada para ese puesto en
+    esa jornada.
+    """
+    demandas_por_puesto_y_jornada: dict[tuple[int, int], int] = defaultdict(lambda:0)
     for entry in demandas_data: # type: dict[str, Any]
         if entry["DemandasPuestosTrabajos"]:
-            jornada = Jornada.from_id(int(entry["Demanda"]["jornada_id"]))
+            jornada_id = entry["Demanda"]["jornada_id"]
             for demanda_puestos in entry["DemandasPuestosTrabajos"]: # type: dict[str, Any]
-                puesto = PuestoTrabajo.from_id(demanda_puestos["puesto_trabajo_id"])
-                demandas[puesto, jornada] += int(demanda_puestos["num_trabajadores"])
-    return demandas
+                puesto_id = demanda_puestos["puesto_trabajo_id"]
+                demandas_por_puesto_y_jornada[puesto_id, jornada_id] += int(demanda_puestos["num_trabajadores"])
+
+    return demandas_por_puesto_y_jornada
 
 
-def parse_excepciones() -> set[tuple[Trabajador, Jornada]]:
-    set_excepciones_jornadas: set[tuple[Trabajador, Jornada]] = set()
-    set_excepciones_dias: set[Trabajador] = set()
+def parse_excepciones_ids() -> set[tuple[int, int]]:
+    """
+    Retorna un conjunto de tuplas (trabajador_id, jornada_id) en las que el trabajador está disponible en la jornada.
+    """
+    excep_trab_jorn: set[tuple[int, int]] = set()
+    excepciones_trabajadores: set[int] = set()
 
     for entry in excepciones_data: # type: dict[str, Any]
-        if entry.get("TiposExcepcionesTrabajadoresJornadas", {}):
-            trabajador = Trabajador.from_id(entry["TipoExcepcionTrabajador"]["trabajador_id"])
+        if entry.get("TiposExcepcionesTrabajadoresJornadas", None):
+            trabajador_id: int = int(entry["TipoExcepcionTrabajador"]["trabajador_id"])
             for excepcion in entry["TiposExcepcionesTrabajadoresJornadas"]: # type: dict[str, Any]
-                set_excepciones_jornadas.add((trabajador, Jornada.from_id(excepcion["jornada_id"])))
+                jornada_id: int = int(excepcion["jornada_id"])
+                excep_trab_jorn.add((trabajador_id, jornada_id))
 
     for entry in eventos_data: # type: dict[str, Any]
         if not parse_bool(entry["Evento"]["disponibilidad"]):
-            set_excepciones_dias.add(Trabajador.from_id(entry["EventoTrabajadorGrupoPersonal"]["trabajador_id"]))
+            excepciones_trabajadores.add(entry["EventoTrabajadorGrupoPersonal"]["trabajador_id"])
 
+    # Se retornan los pares (trabajador_id, jornada_id) que no aparezcan en excep_trab_jorn y cuyo ID del trabajador no
+    # aparezca en excepciones_trabajadores. Para ello se deben tener previamente registrado todos los trabajadores y
+    # jornadas en el registro de Identificable (es decir, se deben haber creado los objetos de Trabajador y Jornada)
     return {
-        (trabajador, jornada)
-        for trabajador, jornada in product(Trabajador.get_registro().values(), Jornada)
-        if (trabajador, jornada) not in set_excepciones_jornadas
-        and trabajador not in set_excepciones_dias
+        (trabajador_id, jornada_id)
+        for trabajador_id, jornada_id in product(Trabajador.get_registro().keys(), Jornada.get_registro().keys())
+        if (trabajador_id, jornada_id) not in excep_trab_jorn
+        and trabajador_id not in excepciones_trabajadores
     }
 
 
-def parse_concesiones() -> tuple[
-    list[Trabajador],   # Voluntarios dobles
-    list[Trabajador]    # Voluntarios de noche
+def parse_concesiones_ids() -> tuple[
+    list[int],   # Trabajadores voluntarios dobles
+    list[int]    # Trabajadores voluntarios de noche
 ]:
-    lista_voluntarios_doble: list[Trabajador] = []
-    lista_voluntarios_noche: list[Trabajador] = []
+    """
+    Retorna dos listas de IDs de trabajadores: los voluntarios para dobles y para noche, ordenados por el código de los
+    trabajadores que representan.
+    """
+    voluntarios_doble: list[int] = []
+    voluntarios_noche: list[int] = []
     for entry in concesiones_data: # type: dict[str, Any]
-        if entry["TipoConcesion"]["nombre_es"] == "Voluntario Noche" or entry["TipoConcesion"]["nombre_es"] == "Voluntario Doble":
-            trabajador = Trabajador.from_id(entry["TipoConcesionTrabajador"]["trabajador_id"])
-            if entry["TipoConcesion"]["nombre_es"] == "Voluntario Noche" and trabajador is not None and trabajador not in lista_voluntarios_noche:
-                lista_voluntarios_noche.append(trabajador)
-            if entry["TipoConcesion"]["nombre_es"] == "Voluntario Doble" and trabajador is not None and trabajador not in lista_voluntarios_doble:
-                lista_voluntarios_doble.append(trabajador)
-    lista_voluntarios_doble.sort(key=get_codigo)
-    lista_voluntarios_noche.sort(key=get_codigo)
-    return lista_voluntarios_doble, lista_voluntarios_noche
+        tipo_voluntario = entry["TipoConcesion"]["nombre_es"]
+        if tipo_voluntario == "Voluntario Noche" or tipo_voluntario == "Voluntario Doble":
+            trabajador_id = int(entry["TipoConcesionTrabajador"]["trabajador_id"])
+            if tipo_voluntario == "Voluntario Noche" and trabajador_id not in voluntarios_noche:
+                voluntarios_noche.append(trabajador_id)
+            if tipo_voluntario == "Voluntario Doble" and trabajador_id not in voluntarios_doble:
+                voluntarios_doble.append(trabajador_id)
+
+    return ordena_ids_trabajadores(voluntarios_doble), ordena_ids_trabajadores(voluntarios_noche)
 
 
 Grupo = Literal["Grupo1", "Grupo2", "Grupo3", "Grupo4"]
-def parse_grupos(nombre_grupo_tarde: Grupo):
-    grupo_manana: list[Trabajador] = []
-    grupo_tarde: list[Trabajador] = []
+def parse_grupos_ids(nombre_grupo_tarde: Grupo) -> tuple[
+    list[int],  # Trabajadores con preferencia de mañana.
+    list[int]   # Trabajadores con preferencia de tarde.
+]:
+    """
+    Retorna dos listas de IDs de trabajadores: los de preferencia de mañana y los de tarde, ordenados por el código
+    de los trabajadores que representan.
+
+    Acepta como parámetro una cadena de entre ["Grupo1", "Grupo2", "Grupo3", "Grupo4"], representando el nombre del
+    grupo que tendrá preferencia de tarde.
+    """
+    grupo_manana: list[int] = []
+    grupo_tarde: list[int] = []
     for entry in grupos_data: # type: dict[str, Any]
         if entry["GrupoPersonal"]["nombre_es"] == nombre_grupo_tarde:
-            grupo_tarde.append(Trabajador.get_or_create(entry["Trabajador"]))
+            grupo_tarde.append(int(entry["Trabajador"]["id"]))
         else:
-            grupo_manana.append(Trabajador.get_or_create(entry["Trabajador"]))
-    grupo_manana.sort(key=get_codigo)
-    grupo_tarde.sort(key=get_codigo)
-    return grupo_manana, grupo_tarde
+            grupo_manana.append(int(entry["Trabajador"]["id"]))
+
+    return ordena_ids_trabajadores(grupo_manana), ordena_ids_trabajadores(grupo_tarde)
 
 
-def parse_contratos():
-    lista_trabajadores: list[Trabajador] = []
+def parse_contratos_ids() -> list[int]:
+    """
+    Devuelve la lista de trabajadores con contratos activos, que son potencialmente elegibles para las asignaciones.
+    """
+    lista_trabajadores: list[int] = []
+    ids_trabajadores: set[int] = set(Trabajador.get_registro().keys())
     for entry in contratos_data: # type: dict[str, Any]
-        trabajador: Trabajador = Trabajador.from_id(entry["TrabajadorContrato"]["trabajador_id"])
-        if trabajador is not None:
-            lista_trabajadores.append(trabajador)
+        trabajador_id = int(entry["TrabajadorContrato"]["trabajador_id"])
+        if trabajador_id in ids_trabajadores:
+            lista_trabajadores.append(trabajador_id)
     return lista_trabajadores
 
 
-def parse_all_data(nombre_grupo_tarde: Grupo) -> tuple[
-    DatosTrabajadoresPuestosJornadas,           # Lista de Trabajadores, Puestos y Jornadas
-    ListasPreferencias,                         # Listas de preferencias de especialidad, voluntarios de noche y dobles, mañana y tarde
-    dict[tuple[PuestoTrabajo, Jornada], int],   # Demanda por cada puesto y jornada
-    set[tuple[Trabajador, Jornada]],            # Disponibilidad de los trabajadores en las distintas jornadas
+def parse_all_data_ids(nombre_grupo_tarde: Grupo) -> tuple[
+    IdsTrabajadoresPuestosJornadas,     # Lista de Trabajadores, Puestos y Jornadas
+    IdsListasPreferencias,              # Listas de preferencias de especialidad, voluntarios de noche y dobles, mañana y tarde
+    dict[tuple[int, int], int],         # Demanda por cada puesto y jornada
+    set[tuple[int, int]],               # Disponibilidad de los trabajadores en las distintas jornadas
 ]:
-    especialidades: dict[PuestoTrabajo, list[Trabajador]] = parse_trabajadores_puestos()
-    trabajadores: list[Trabajador] = parse_contratos()
-    puestos: list[PuestoTrabajo] = list(PuestoTrabajo.get_registro().values())
-    jornadas: list[Jornada] = list(Jornada)
-    demandas: dict[tuple[PuestoTrabajo, Jornada], int] = parse_demandas()
-    disponibilidad = parse_excepciones()
-    voluntarios_doble, voluntarios_noche = parse_concesiones()
-    preferencia_manana, preferencia_tarde = parse_grupos(nombre_grupo_tarde)
+    jornadas: list[int] = parse_jornadas_ids()
+    especialidades: dict[int, list[int]] = parse_trabajadores_puestos_ids()
+    trabajadores: list[int] = parse_contratos_ids()
+    puestos: list[int] = list(PuestoTrabajo.get_registro().keys())
+    demandas: dict[tuple[int, int], int] = parse_demandas_ids()
+    disponibilidad = parse_excepciones_ids()
+    voluntarios_doble, voluntarios_noche = parse_concesiones_ids()
+    preferencia_manana, preferencia_tarde = parse_grupos_ids(nombre_grupo_tarde)
     return (
-        DatosTrabajadoresPuestosJornadas(trabajadores, puestos, jornadas),
-        ListasPreferencias(especialidades, {TipoJornada.MANANA : preferencia_manana, TipoJornada.TARDE : preferencia_tarde, TipoJornada.NOCHE : voluntarios_noche}, voluntarios_doble),
+        IdsTrabajadoresPuestosJornadas(trabajadores, puestos, jornadas),
+        IdsListasPreferencias(especialidades, {1 : preferencia_manana, 2 : preferencia_tarde, 3 : voluntarios_noche}, voluntarios_doble),
         demandas,
         disponibilidad
     )
 
 
-data = parse_all_data("Grupo1")
+data_ids = parse_all_data_ids("Grupo1")

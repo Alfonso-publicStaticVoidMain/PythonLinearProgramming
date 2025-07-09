@@ -8,6 +8,23 @@ from ortools.sat.python.cp_model import IntVar, CpSolver
 from Clases import TipoJornada, Jornada, PuestoTrabajo, Trabajador
 
 
+class IdsAsignacion(NamedTuple):
+    trabajador_id: int
+    puesto_id: int
+    jornada_id: int
+    var: IntVar
+    puntuacion: int
+
+    def get_trabajador(self: IdsAsignacion) -> Trabajador:
+        return Trabajador.from_id(self.trabajador_id)
+
+    def get_puesto(self: IdsAsignacion) -> PuestoTrabajo:
+        return PuestoTrabajo.from_id(self.puesto_id)
+
+    def get_jornada(self: IdsAsignacion) -> Jornada:
+        return Jornada.from_id(self.jornada_id)
+
+
 class Asignacion(NamedTuple):
     trabajador: Trabajador
     puesto: PuestoTrabajo
@@ -29,10 +46,22 @@ class DatosTrabajadoresPuestosJornadas(NamedTuple):
     jornadas: list[Jornada]
 
 
+class IdsTrabajadoresPuestosJornadas(NamedTuple):
+    trabajadores: list[int]
+    puestos: list[int]
+    jornadas: list[int]
+
+
 class ListasPreferencias(NamedTuple):
     especialidades: dict[PuestoTrabajo, list[Trabajador]]
     preferencias_jornada: dict[TipoJornada, list[Trabajador]]
     voluntarios_doble: list[Trabajador]
+
+
+class IdsListasPreferencias(NamedTuple):
+    especialidades: dict[int, list[int]]
+    preferencias_jornada: dict[int, list[int]]
+    voluntarios_doble: list[int]
 
 
 class IndicesPreferencias(NamedTuple):
@@ -62,6 +91,7 @@ class IndicesPreferencias(NamedTuple):
         return IndicesPreferencias(especialidades, preferencias_jornada, voluntarios_doble)
 
 
+'''
 @dataclass(frozen=True, slots=True)
 class ParametrosPuntuacion:
     """
@@ -113,7 +143,114 @@ class ParametrosPuntuacion:
             self.max_capacidad, self.decay_capacidad,
             self.max_voluntarios_doble, self.decay_voluntarios_doble
         )
+'''
 
+
+@dataclass(frozen=True, slots=True)
+class IdsParametrosPuntuacion:
+    """
+    Clase para encapsular los parámetros que se van a utilizar en el cálculo de la función objetivo a maximizar por
+    el modelo. Sus prefijos denotan el comportamiento que van a desempeñar en ese cálculo:
+    <ul>
+        <li>max: El máximo de puntuación que se puede asignar a esa categoría, previa multiplicación del coeficiente.</li>
+        <li>decay: Decaimiento por cada posición que se aleja de la posición de máxima prioridad de la lista apropiada.</li>
+    </ul>
+    """
+
+    max_especialidad: int = 500
+    decay_especialidad: int = 5
+
+    max_capacidad: int = 50
+    decay_capacidad: int = 10
+
+    max_voluntarios_doble: int = -1000 # Este parámetro tiene un valor negativo para desincentivar que se asignen dobles
+    decay_voluntarios_doble: int = 1
+
+    max_preferencia_por_jornada: frozendict[int, int] = frozendict({
+        1 : 300,
+        2 : 500,
+        3 : 700,
+    })
+
+    decay_preferencia_por_jornada: frozendict[int, int] = frozendict({
+        1 : 1,
+        2 : 1,
+        3 : 1,
+    })
+
+    penalizacion_por_jornada: frozendict[int, int] = frozendict({
+        1 : 0,
+        2 : 50,
+        3 : 500,
+    })
+
+    def unpack(self: ParametrosPuntuacion) -> tuple:
+        return (
+            self.max_especialidad, self.decay_especialidad,
+            self.max_capacidad, self.decay_capacidad,
+            self.max_voluntarios_doble, self.decay_voluntarios_doble,
+            self.max_preferencia_por_jornada, self.decay_preferencia_por_jornada, self.penalizacion_por_jornada
+        )
+
+    def unpack_festivo(self: ParametrosPuntuacion) -> tuple:
+        return (
+            self.max_capacidad, self.decay_capacidad,
+            self.max_voluntarios_doble, self.decay_voluntarios_doble
+        )
+
+
+
+@dataclass(frozen=True, slots=True)
+class ParametrosPuntuacion:
+    """
+    Clase para encapsular los parámetros que se van a utilizar en el cálculo de la función objetivo a maximizar por
+    el modelo. Sus prefijos denotan el comportamiento que van a desempeñar en ese cálculo:
+    <ul>
+        <li>max: El máximo de puntuación que se puede asignar a esa categoría, previa multiplicación del coeficiente.</li>
+        <li>decay: Decaimiento por cada posición que se aleja de la posición de máxima prioridad de la lista apropiada.</li>
+    </ul>
+    """
+
+    max_especialidad: int = 500
+    decay_especialidad: int = 5
+
+    max_capacidad: int = 50
+    decay_capacidad: int = 10
+
+    max_voluntarios_doble: int = -1000 # Este parámetro tiene un valor negativo para desincentivar que se asignen dobles
+    decay_voluntarios_doble: int = 1
+
+    max_preferencia_por_jornada: frozendict[TipoJornada, int] = frozendict({
+        TipoJornada.from_id(1) : 300,
+        TipoJornada.from_id(2) : 500,
+        TipoJornada.from_id(3) : 700,
+    })
+
+    decay_preferencia_por_jornada: frozendict[TipoJornada, int] = frozendict({
+        TipoJornada.from_id(1) : 1,
+        TipoJornada.from_id(2) : 1,
+        TipoJornada.from_id(3) : 1,
+    })
+
+    penalizacion_por_jornada: frozendict[TipoJornada, int] = frozendict({
+        TipoJornada.from_id(1) : 0,
+        TipoJornada.from_id(2) : 50,
+        TipoJornada.from_id(3) : 500,
+    })
+
+    def unpack(self: ParametrosPuntuacion) -> tuple:
+        return (
+            self.max_especialidad, self.decay_especialidad,
+            self.max_capacidad, self.decay_capacidad,
+            self.max_voluntarios_doble, self.decay_voluntarios_doble,
+            self.max_preferencia_por_jornada, self.decay_preferencia_por_jornada, self.penalizacion_por_jornada
+        )
+
+    def unpack_festivo(self: ParametrosPuntuacion) -> tuple:
+        return (
+            self.max_capacidad, self.decay_capacidad,
+            self.max_voluntarios_doble, self.decay_voluntarios_doble
+        )
 
 def print_estadisticas_avanzadas(solver: CpSolver, mensaje: str = ""):
     print(mensaje)
