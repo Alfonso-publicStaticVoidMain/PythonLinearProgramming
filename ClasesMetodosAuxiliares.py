@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import NamedTuple
-from frozendict import frozendict
+from immutabledict import immutabledict
 from ortools.sat.python.cp_model import IntVar, CpSolver
 
 from Clases import TipoJornada, Jornada, PuestoTrabajo, Trabajador
@@ -82,19 +82,19 @@ class ParametrosPuntuacion:
     max_voluntarios_doble: int = -1000 # Este parámetro tiene un valor negativo para desincentivar que se asignen dobles
     decay_voluntarios_doble: int = 1
 
-    max_preferencia_por_jornada: frozendict[TipoJornada, int] = frozendict({
+    max_preferencia_por_jornada: immutabledict[TipoJornada, int] = immutabledict({
         TipoJornada.MANANA : 300,
         TipoJornada.TARDE : 500,
         TipoJornada.NOCHE : 700,
     })
 
-    decay_preferencia_por_jornada: frozendict[TipoJornada, int] = frozendict({
+    decay_preferencia_por_jornada: immutabledict[TipoJornada, int] = immutabledict({
         TipoJornada.MANANA: 1,
         TipoJornada.TARDE: 1,
         TipoJornada.NOCHE: 1,
     })
 
-    penalizacion_por_jornada: frozendict[TipoJornada, int] = frozendict({
+    penalizacion_por_jornada: immutabledict[TipoJornada, int] = immutabledict({
         TipoJornada.MANANA: 0,
         TipoJornada.TARDE: 50,
         TipoJornada.NOCHE: 500,

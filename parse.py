@@ -4,7 +4,7 @@ from itertools import product
 import json
 
 from ClasesMetodosAuxiliares import DatosTrabajadoresPuestosJornadas, ListasPreferencias
-from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, TipoJornada, IdList, parse_bool
+from Clases import Trabajador, PuestoTrabajo, NivelDesempeno, Jornada, TipoJornada, parse_bool
 
 T = TypeVar('T')
 get_id = lambda p : p.id
