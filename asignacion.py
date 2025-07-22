@@ -11,6 +11,63 @@ from ClasesMetodosAuxiliares import ListasPreferencias, ParametrosPuntuacion, Ve
 from Clases import Trabajador, PuestoTrabajo, Jornada, TipoJornada, NivelDesempeno
 from parse import data
 
+"""
+def generar_modelo(
+    trabajadores: list[Trabajador],
+    jornadas: set[Jornada],
+    disponibilidad: set[tuple[Trabajador, Jornada]],
+    listas_preferencias: ListasPreferencias,
+    parametros: ParametrosPuntuacion
+) -> tuple[CpModel, list[Asignacion], dict[Trabajador, int]]:
+    model: CpModel = CpModel()
+    lista_asignaciones: list[Asignacion] = []
+    coeficientes_dobles: dict[Trabajador, int] = {}
+
+    especialidades, preferencia_por_jornada, voluntarios_doble = listas_preferencias
+
+    (
+        max_especialidad, decay_especialidad,
+        max_capacidad, decay_capacidad,
+        max_voluntarios_doble, decay_voluntarios_doble,
+        max_preferencia_por_jornada, decay_preferencia_por_jornada, penalizacion_por_jornada
+    ) = parametros.unpack()
+
+    for trabajador in voluntarios_doble:
+        coeficientes_dobles[trabajador] = max_voluntarios_doble - decay_voluntarios_doble * voluntarios_doble.index(trabajador)
+
+    for trabajador in trabajadores:
+        for puesto in trabajador.capacidades:
+            for jornada in jornadas:
+                if (trabajador, jornada) in disponibilidad:
+                    # Puntuación por capacidad.
+                    punt_capacidad: int = max(0, max_capacidad - decay_capacidad * (
+                                trabajador.capacidades[puesto].id - 1))
+
+                    # Puntuación por estar más alto en las listas de especialidades.
+                    punt_especialidad: int = 0
+                    especialistas_puesto: list[Trabajador] = especialidades.get(puesto, [])
+                    if trabajador in especialistas_puesto:
+                        punt_especialidad = max(0, max_especialidad - decay_especialidad * especialistas_puesto.index(trabajador))
+
+                    # Puntuación por preferencia de jornada o penalización por no ser voluntario para noche
+                    punt_jornada: int = 0
+                    if jornada in Jornada.jornadas_con_preferencia():
+                        tipo_jornada = jornada.tipo_jornada
+                        if trabajador in preferencia_por_jornada[tipo_jornada]:
+                            punt_jornada += max_preferencia_por_jornada[tipo_jornada] - decay_preferencia_por_jornada[tipo_jornada] * preferencia_por_jornada[tipo_jornada].index(trabajador)
+                        else:
+                            punt_jornada -= penalizacion_por_jornada[tipo_jornada]
+
+                    lista_asignaciones.append(Asignacion(
+                        trabajador,
+                        puesto,
+                        jornada,
+                        var=model.NewBoolVar(f'x_{trabajador}_{puesto}_{jornada}'),
+                        puntuacion=punt_capacidad + punt_especialidad + punt_jornada
+                    ))
+
+    return model, lista_asignaciones, coeficientes_dobles
+"""
 
 def calcular_coeficientes_puntuacion(
     trabajadores: list[Trabajador],
