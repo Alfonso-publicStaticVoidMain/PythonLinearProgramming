@@ -9,7 +9,7 @@ from ortools.sat.python.cp_model import CpModel, IntVar, LinearExpr, CpSolver
 from ClasesMetodosAuxiliares import ListasPreferencias, ParametrosPuntuacion, Verbose, DatosTrabajadoresPuestosJornadas, \
     Asignacion, print_estadisticas_avanzadas, formatear_float
 from Clases import Trabajador, PuestoTrabajo, Jornada, TipoJornada, NivelDesempeno
-from parse import data
+from parse_API import data
 
 """
 def generar_modelo(
