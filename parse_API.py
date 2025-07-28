@@ -12,16 +12,6 @@ get_id = lambda p : p.id
 get_codigo = lambda t : t.codigo
 
 
-url_puestos: Callable[[int], str]
-url_demandas: Callable[[int], str]
-url_concesiones: Callable[[int], str]
-url_excepciones: Callable[[int], str]
-url_eventos: Callable[[int], str]
-url_jornadas: str
-url_grupos: Callable[[int], str]
-url_contratos: Callable[[int], str]
-
-
 def fetch_data_from_api(api_url: str) -> dict[str, Any] | None:
     try:
         response = requests.get(api_url)
@@ -45,70 +35,74 @@ def setup_json_url(
     usuario_origen_autenticacion_clave: str,
     usuario_alias: str,
     usuario_password: str
-):
-    # TODO: Ocultar parámetros usuario_origen_autenticacion_clave, usuario_alias, usuario_password en las url
-    global url_puestos, url_demandas, url_concesiones, url_excepciones, url_eventos, url_jornadas, concesiones_data, url_grupos, url_contratos
-
+) -> tuple[
+    Callable[[int], str], Callable[[int], str], Callable[[int], str], Callable[[int], str], Callable[[int], str], str,
+    Callable[[int], str], Callable[[int], str]
+]:
+    token_fecha: str = f'condicionesFechas:%7B"fecha":%20"{fecha}"%7D/'
+    token_pagina: str = 'limit:1000/page:'
     token_autentificacion: str = (
         f'?usuario_origen_autenticacion_clave={usuario_origen_autenticacion_clave}'
         f'&usuario_alias={usuario_alias}'
         f'&usuario_password={usuario_password}'
     )
 
-    url_puestos = lambda page : (
+    url_puestos: Callable[[int], str] = lambda page : (
         f'{server}/ws/contractual/trabajadores_puestos_trabajos/listar/'
-        f'condicionesFechas:%7B"fecha":%20"{fecha}"%7D/'
-        f'limit:1000/page:{page}'
+        + token_fecha
+        + token_pagina + str(page)
         + token_autentificacion
     )
 
-    url_demandas = lambda page : (
+    url_demandas: Callable[[int], str] = lambda page : (
         f'{server}/ws/contratacion/demandas/listar/'
         f'contiene:["DemandasPuestosTrabajos"]/'
-        f'condicionesFechas:%7B"fecha":%20"{fecha}"%7D/'
-        f'limit:1000/page:{page}'
-        +token_autentificacion
+        + token_fecha
+        + token_pagina + str(page)
+        + token_autentificacion
     )
 
-    url_concesiones = lambda page : (
+    url_concesiones: Callable[[int], str] = lambda page : (
         f'{server}/ws/disponibilidad/tipos_concesiones_trabajadores/listar'
-        f'/condicionesFechas:%7B"fecha":%20"{fecha}"%7D/'
-        f'limit:1000/page:{page}/'
+        + token_fecha
+        + token_pagina + str(page)
         + token_autentificacion
     )
 
-    url_excepciones = lambda page : (
+    url_excepciones: Callable[[int], str] = lambda page : (
         f'{server}/ws/disponibilidad/tipos_excepciones_trabajadores/listar/'
-        f'condicionesFechas:%7B"fecha":%20"{fecha}"%7D/'
-        f'limit:1000/page:{page}/'
+        + token_fecha
+        + token_pagina + str(page)
         + token_autentificacion
     )
 
-    url_eventos = lambda page : (
+    url_eventos: Callable[[int], str] = lambda page : (
         f'{server}/ws/disponibilidad/eventos_trabajadores_grupos_personales/listar/'
-        f'condicionesFechas:%7B"fecha":%20"{fecha}"%7D/'
-        f'limit:1000/page:{page}'
+        + token_fecha
+        + token_pagina + str(page)
         + token_autentificacion
     )
 
-    url_jornadas = f'{server}/ws/operativa/jornadas/listar/' + token_autentificacion
+    url_jornadas: str = f'{server}/ws/operativa/jornadas/listar/' + token_autentificacion
 
-    url_grupos = lambda page : (
+    url_grupos: Callable[[int], str] = lambda page : (
         f'{server}/ws/contractual/trabajadores_grupos_personales/listar/'
-        f'condicionesFechas:%7B"fecha":%20"{fecha}"%7D/'
-        f'limit:1000/page:{page}'
+        + token_fecha
+        + token_pagina + str(page)
         + token_autentificacion
     )
 
-    url_contratos = lambda page : (
+    url_contratos: Callable[[int], str] = lambda page : (
         f'{server}/ws/contractual/trabajadores_contratos/listar/'
-        f'condicionesFechas:%7B"fecha":%20"{fecha}"%7D/'
-        f'limit:1000/page:{page}'
+        + token_fecha
+        + token_pagina + str(page)
         + token_autentificacion
     )
 
+    return url_puestos, url_demandas, url_concesiones, url_excepciones, url_eventos, url_jornadas, url_grupos, url_contratos
 
-def parse_trabajadores_puestos() -> dict[PuestoTrabajo, list[Trabajador]]:
+
+def parse_trabajadores_puestos(url_puestos: Callable[[int], str]) -> dict[PuestoTrabajo, list[Trabajador]]:
     # puesto -> lista ordenada de trabajadores especialistas en ese puesto.
     dict_especialidades: dict[PuestoTrabajo, list[Trabajador]] = defaultdict(list)
 
@@ -133,7 +127,7 @@ def parse_trabajadores_puestos() -> dict[PuestoTrabajo, list[Trabajador]]:
     return dict_especialidades
 
 
-def parse_demandas() -> dict[tuple[PuestoTrabajo, Jornada], int]:
+def parse_demandas(url_demandas: Callable[[int], str]) -> dict[tuple[PuestoTrabajo, Jornada], int]:
     demandas: dict[tuple[PuestoTrabajo, Jornada], int] = defaultdict(lambda:0)
     pagina = 1
     demandas_data = fetch_data_from_api(url_demandas(pagina))
@@ -149,7 +143,7 @@ def parse_demandas() -> dict[tuple[PuestoTrabajo, Jornada], int]:
     return demandas
 
 
-def parse_excepciones() -> set[tuple[Trabajador, Jornada]]:
+def parse_excepciones(url_excepciones: Callable[[int], str], url_eventos: Callable[[int], str]) -> set[tuple[Trabajador, Jornada]]:
     set_excepciones_jornadas: set[tuple[Trabajador, Jornada]] = set()
     set_excepciones_dias: set[Trabajador] = set()
 
@@ -183,7 +177,7 @@ def parse_excepciones() -> set[tuple[Trabajador, Jornada]]:
     }
 
 
-def parse_concesiones() -> tuple[
+def parse_concesiones(url_concesiones: Callable[[int], str]) -> tuple[
     list[Trabajador],   # Voluntarios dobles
     list[Trabajador]    # Voluntarios de noche
 ]:
@@ -211,7 +205,7 @@ def parse_concesiones() -> tuple[
 
 
 Grupo = Literal["Grupo1", "Grupo2", "Grupo3", "Grupo4"]
-def parse_grupos(nombre_grupo_tarde: Grupo):
+def parse_grupos(url_grupos: Callable[[int], str], nombre_grupo_tarde: Grupo):
     grupo_manana: list[Trabajador] = []
     grupo_tarde: list[Trabajador] = []
 
@@ -233,7 +227,7 @@ def parse_grupos(nombre_grupo_tarde: Grupo):
     return grupo_manana, grupo_tarde
 
 
-def parse_contratos():
+def parse_contratos(url_contratos: Callable[[int], str]):
     lista_trabajadores: list[Trabajador] = []
 
     pagina = 1
@@ -256,14 +250,14 @@ def parse_all_data(server: str, fecha: str, nombre_grupo_tarde: Grupo) -> tuple[
     dict[tuple[PuestoTrabajo, Jornada], int],   # Demanda por cada puesto y jornada
     set[tuple[Trabajador, Jornada]],            # Disponibilidad de los trabajadores en las distintas jornadas
 ]:
-    setup_json_url(server, fecha, usuario_origen_autenticacion_clave, usuario_alias, usuario_password)
+    url_puestos, url_demandas, url_concesiones, url_excepciones, url_eventos, url_jornadas, url_grupos, url_contratos = setup_json_url(server, fecha, usuario_origen_autenticacion_clave, usuario_alias, usuario_password)
 
-    especialidades = parse_trabajadores_puestos()
-    demandas = parse_demandas()
-    disponibilidad = parse_excepciones()
-    voluntarios_doble, voluntarios_noche = parse_concesiones()
-    preferencia_manana, preferencia_tarde = parse_grupos(nombre_grupo_tarde)
-    trabajadores = parse_contratos()
+    especialidades = parse_trabajadores_puestos(url_puestos)
+    demandas = parse_demandas(url_demandas)
+    disponibilidad = parse_excepciones(url_excepciones, url_eventos)
+    voluntarios_doble, voluntarios_noche = parse_concesiones(url_concesiones)
+    preferencia_manana, preferencia_tarde = parse_grupos(url_grupos, nombre_grupo_tarde)
+    trabajadores = parse_contratos(url_contratos)
     puestos: list[PuestoTrabajo] = list(PuestoTrabajo.get_registro().values())
     jornadas: list[Jornada] = list(Jornada)
 
