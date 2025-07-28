@@ -11,10 +11,13 @@ from typing import ClassVar, Type, TypeVar, Any, get_type_hints, Generic, Callab
 @dataclass(eq=False, slots=True, frozen=True)
 class Identificable:
     """
-    Clase que actúa como superclase para todas las clases que se quiera que hereden un atributo id: int que las
-    identifique de forma única. Posee también un atributo de clase _registros, un diccionario que mapea cada tipo de
-    clase (que se espera que sea solamente de las que extiendan Identificable) a un diccionario que mapea cada posible
-    id: int al objeto que tiene ese ID.
+    Superclase con un atributo id entero que lleva un registro por id de los objetos creados de cada subclase suya.
+
+    Attributes:
+        id (int): Identificador que se supone único de cada objeto.
+
+        _registros (ClassVar[dict[type, dict[int, Identificable]]]): Diccionario que mapea cada tipo de una subclase
+         de Identificable a un diccionario que mapea cada posible id al único objeto que puede existir con ese id.
     """
     id: int
     _registros: ClassVar[dict[type, dict[int, Identificable]]] = defaultdict(dict)
@@ -75,6 +78,7 @@ class Identificable:
     def from_id[T: Identificable](cls: type[T], id_: int | float | str) -> T | None:
         """
         Busca y retorna un objeto con el ID deseado, o None si no se encuentra.
+
         :param id_: ID del objeto a buscar.
         :return: El objeto guardado en el registro cuyo ID sea el mismo que el recibido como argumento, o None si
         no se encuentra tal objeto.

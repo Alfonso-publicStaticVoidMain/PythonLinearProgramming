@@ -543,7 +543,7 @@ if __name__ == "__main__":
         verbose=Verbose(
             general=True,
             estadisticas_avanzadas=True,
-            asignacion_puestos=False,
+            asignacion_puestos=True,
             asignacion_trabajadores=True
         )
     )

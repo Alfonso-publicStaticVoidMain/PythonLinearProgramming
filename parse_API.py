@@ -274,8 +274,20 @@ def parse_all_data(server: str, fecha: str, nombre_grupo_tarde: Grupo) -> tuple[
         disponibilidad
     )
 
-"""
-[sensitive data here]
-"""
+try:
+    with open('../auth_info.json', "r", encoding="utf-8") as f:
+        auth_info = json.load(f)
+except json.JSONDecodeError as e:
+    print(f"Invalid JSON: {e}")
+except FileNotFoundError as e:
+    print(f"JSON file not found: {e}")
+
+
+bilbao: str = auth_info["server"]
+dia: str = auth_info["dia"]
+usuario_origen_autenticacion_clave = auth_info["usuario_origen_autenticacion_clave"]
+usuario_alias = auth_info["usuario_alias"]
+usuario_password = auth_info["usuario_password"]
+
 
 data = parse_all_data(bilbao, dia, "Grupo1")
