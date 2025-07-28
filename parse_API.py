@@ -63,7 +63,7 @@ def setup_json_url(
     )
 
     url_concesiones: Callable[[int], str] = lambda page : (
-        f'{server}/ws/disponibilidad/tipos_concesiones_trabajadores/listar'
+        f'{server}/ws/disponibilidad/tipos_concesiones_trabajadores/listar/'
         + token_fecha
         + token_pagina + str(page)
         + token_autentificacion
